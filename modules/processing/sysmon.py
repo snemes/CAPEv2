@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 import logging, os, re
 import xml.etree.ElementTree as ET
 import xmltodict
@@ -23,6 +22,9 @@ def parseXmlToJson(xml):
 
 
 class Sysmon(Processing):
+
+    key = "sysmon"
+
     def remove_noise(self, data):
         filtered_proc_creations_re = [
             r"C:\\Windows\\System32\\wevtutil\.exe\s+clear-log\s+microsoft-windows-(sysmon|powershell)\/operational",
@@ -48,10 +50,12 @@ class Sysmon(Processing):
         return filtered
 
     def run(self):
-        self.key = "sysmon"
-
         # Determine oldest sysmon log and remove the rest
         lastlog = os.listdir("%s/sysmon/" % self.analysis_path)
+        if not lastlog:
+            log.warning('Sysmon directory is empty')
+            return
+
         lastlog.sort()
         lastlog = lastlog[-1]
         # Leave only the most recent file

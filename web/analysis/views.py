@@ -32,6 +32,8 @@ from lib.cuckoo.core.database import Database, Task, TASK_PENDING
 from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.web_utils import perform_malscore_search, perform_search, perform_ttps_search, search_term_map, my_rate_minutes, my_rate_seconds, apilimiter, apiconf, rateblock
+
+# why? why? why? this introduces an unnecesary coupling
 import modules.processing.network as network
 
 try:
@@ -1521,6 +1523,7 @@ def pcapstream(request, task_id, conntuple):
         # print str(e)
         return render(request, "standalone_error.html", {"error": "The required sorted PCAP does not exist"})
 
+    # TODO: remove dependency on the network module
     packets = list(network.packets_for_stream(fobj, offset))
     fobj.close()
 

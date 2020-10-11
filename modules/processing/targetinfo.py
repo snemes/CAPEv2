@@ -2,21 +2,24 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import os.path
+import logging
 
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.objects import File
+
+log = logging.getLogger(__name__)
 
 
 class TargetInfo(Processing):
     """General information about a file."""
 
+    key = "target"
+
     def run(self):
         """Run file information gathering.
         @return: information dict.
         """
-        self.key = "target"
 
         target_info = {"category": self.task["category"]}
         # We have to deal with file or URL targets.

@@ -563,6 +563,8 @@ class File(object):
                     infos["entrypoint"] = self.get_entrypoint(pe)
                     infos["ep_bytes"] = self.get_ep_bytes(pe)
                     infos["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(pe.FILE_HEADER.TimeDateStamp))
+            except pefile.PEFormatError:
+                pass
             except Exception as e:
                 log.error(e, exc_info=True)
         return infos

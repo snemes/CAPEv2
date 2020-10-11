@@ -2,7 +2,6 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import os
 import socket
 import struct
@@ -33,10 +32,10 @@ from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.ja3.ja3 import parse_variable_array, convert_to_ja3_segment, process_extensions
 
 try:
-    import GeoIP
+    import geoip2.database
 
     IS_GEOIP = True
-    gi = GeoIP.new(GeoIP.GEOIP_MEMORY_CACHE)
+    gi = geoip2.database.Reader('/var/lib/GeoIP/GeoLite2-Country.mmdb')
 except ImportError:
     IS_GEOIP = False
 
@@ -212,11 +211,11 @@ class Pcap:
         log = logging.getLogger("Processing.Pcap")
         if IS_GEOIP:
             try:
-                temp_cn = gi.country_name_by_addr(ip)
+                temp_cn = gi.country(ip)
                 if temp_cn:
-                    cn = temp_cn
+                    cn = temp_cn.country.name
             except:
-                log.error("Unable to GEOIP resolve %s" % ip)
+                log.error("Unable to GeoIP resolve %s", ip)
         return cn
 
     def _add_hosts(self, connection):
@@ -589,7 +588,7 @@ class Pcap:
     def _add_irc(self, conn, tcpdata):
         """
         Adds an IRC communication.
-	    @param conn: TCP connection info.
+        @param conn: TCP connection info.
         @param tcpdata: TCP data in flow
         """
 
@@ -669,7 +668,7 @@ class Pcap:
     def _add_ja3(self, conn, tcpdata, ja3hash):
         """
         Adds an JA3 digest.
-	    @param conn: TCP connection info.
+        @param conn: TCP connection info.
         @param tcpdata: TCP data in flow
         """
         if conn["src"] == cfg.resultserver.ip:
@@ -829,6 +828,8 @@ class Pcap:
 class NetworkAnalysis(Processing):
     """Network analysis."""
 
+    key = "network"
+
     def _import_ja3_fprints(self):
         """
         open and read ja3 fingerprint json file from:
@@ -849,7 +850,6 @@ class NetworkAnalysis(Processing):
         return ja3_fprints
 
     def run(self):
-        self.key = "network"
         self.ja3_file = self.options.get("ja3_file", os.path.join(CUCKOO_ROOT, "data", "ja3", "ja3fingerprint.json"))
         if not IS_DPKT:
             log.error("Python DPKT is not installed, aborting PCAP analysis.")

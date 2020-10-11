@@ -340,7 +340,13 @@ def generate(abs_fpath, fname, blob, chunks=__chunks__, ibytes=__ibytes_dict__, 
     host.set_title("{title_gap}".format(title_gap=title_gap))
 
     # # Return the plt, kwargs for the plt.savefig function, and additional information for json data
-    json_data = {"title": fname, "info": {"Mean": statistics.mean(shannon_samples), "Standard deviation": statistics.stdev(shannon_samples)}}
+    mean = 0.0
+    stddev = 0.0
+    if len(shannon_samples) > 1:
+        mean = statistics.mean(shannon_samples)
+        stddev = statistics.stdev(shannon_samples)
+
+    json_data = {"title": fname, "info": {"Mean": mean, "Standard deviation": stddev}}
 
     return plt, {"bbox_inches": "tight", "bbox_extra_artists": tuple(legends)}, json_data
 
@@ -438,7 +444,7 @@ class section_proxy(object):
             self.name = lib_section.name
             self.offset = lib_section.offset
         elif self.lib == "pefile":
-            self.name = str(lib_section.Name.rstrip(b"\x00").decode("utf-8"))
+            self.name = str(lib_section.Name.rstrip(b"\x00").decode(errors="replace"))
             self.offset = self.lib_section.PointerToRawData
             self.size = self.lib_section.SizeOfRawData
 

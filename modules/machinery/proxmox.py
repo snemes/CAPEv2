@@ -11,7 +11,7 @@ import sys
 try:
     from proxmoxer import ProxmoxAPI, ResourceException
 except ImportError:
-    sys.exit("Missed dependency: pip3 install proxmoxer -U")
+    sys.exit("Missing dependency: pip3 install proxmoxer -U")
 
 from lib.cuckoo.common.abstracts import Machinery
 from lib.cuckoo.common.config import Config

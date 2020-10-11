@@ -1411,7 +1411,8 @@ class Signature(object):
             self._current_call_raw_dict = dict()
 
             for argument in call["arguments"]:
-                self._current_call_raw_dict[argument["name"]] = argument["raw_value"]
+                # apparently (raw_value, value) was renamed to (value, pretty_value) -- need to check this
+                self._current_call_raw_dict[argument["name"]] = argument.get("raw_value", argument.get("value"))
 
         # Return the required argument.
         if name in self._current_call_raw_dict:

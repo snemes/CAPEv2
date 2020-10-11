@@ -26,14 +26,18 @@
                         <tr>
                             <th>Yara</th>
                             <td>
+                                <ul style="margin-bottom: 0;">
                                 {% for match in proc.yara %}
-                                    <p>Match: {{match.name}} - {{match.meta.description}}
+                                <li>{{match.name}}
+                                    {% if match.meta.description %}
+                                        - {{match.meta.description}}
+                                    {% endif %}
                                     {% if match.meta.author %}
                                         - Author: {{match.meta.author}}
                                     {% endif %}
-                                    <!--{% for string in match.strings %} <div>{{string}}</div> {% endfor %}-->
-                                    </p>
+                                </li>
                                 {% endfor %}
+                                </ul>
                             </td>
                         </tr>
                         {% endif %}
@@ -41,14 +45,23 @@
                         <tr>
                             <th>CAPE Yara</th>
                             <td>
+                                <ul style="margin-bottom: 0;">
                                 {% for match in proc.cape_yara %}
-                                <p>Match: {{match.name}} - {{match.meta.description}} - Author: {{match.meta.author}}
-                                    <!--{% for string in match.strings %} <div>{{string}}</div> {% endfor %}-->
+                                <li>{{match.name}}
+                                    {% if match.meta.cape_type %}
+                                        - {{match.meta.cape_type}}
+                                    {% elif match.meta.description %}
+                                        - {{match.meta.description}}
+                                    {% endif %}
+                                    {% if match.meta.author %}
+                                        - Author: {{match.meta.author}}
+                                    {% endif %}
                                     {% for key, value in match.memblocks.items %}
                                         <div span style="padding-left: 16px;">'{{key}}' in address space {{value}}</div>
                                     {% endfor %}
-                                </p>
+                                </li>
                                 {% endfor %}
+                                </ul>
                             </td>
                         </tr>
                         {% endif %}

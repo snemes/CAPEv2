@@ -109,9 +109,7 @@ $(function() {
     {% if analysis.misp %}
             <li><a href="#misp" data-toggle="tab">MISP</a></li>
     {% endif %}
-    {% if analysis.backscatter %}<li><a href="#backscatter" data-toggle="tab">Backscatter</a></li>{% endif %}
     {% if analysis.mitre_attck %}<li><a href="#mitre" data-toggle="tab">Mitre ATT&CK</a></li>{% endif %}
-    {% if analysis.classification%}<li><a href="#classification" data-toggle="tab">Classification</a> </li>{% endif %}
     {% if analysis.curtain%}<li> <a href="#curtain" data-toggle="tab">Curtain</a></li>{% endif %}
     <li><a href="#statistics" data-toggle="tab">Statistics</a></li>
     {% if settings.ADMIN %}<li><a href="#admin" data-toggle="tab">Admin</a></li>{% endif %}
@@ -172,16 +170,6 @@ $(function() {
         <div class="tab-pane fade" id="debugger">
             {% include "analysis/debugger/index.html" %}
         </div>
-    {% endif %}
-    {% if analysis.backscatter %}
-    <div class="tab-pane fade" id="backscatter">
-        {% include "analysis/backscatter.html" %}
-    </div>
-    {% endif %}
-    {% if analysis.classification %}
-    <div class="tab-pane fade" id="classification">
-        {% include "analysis/classification.html" %}
-    </div>
     {% endif %}
     {% if analysis.mitre_attck %}
     <div class="tab-pane fade" id="mitre">

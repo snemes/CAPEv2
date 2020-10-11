@@ -2,7 +2,6 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import os
 import json
 import logging
@@ -18,12 +17,16 @@ from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.exceptions import CuckooProcessingError
 from lib.cuckoo.common.objects import File
 
+log = logging.getLogger(__name__)
+
 VIRUSTOTAL_FILE_URL = "https://www.virustotal.com/vtapi/v2/file/report"
 VIRUSTOTAL_URL_URL = "https://www.virustotal.com/vtapi/v2/url/report"
 
 
 class VirusTotal(Processing):
     """Gets antivirus signatures from VirusTotal.com"""
+
+    key = "virustotal"
 
     def getbool(self, s):
         if isinstance(s, bool):
@@ -39,7 +42,6 @@ class VirusTotal(Processing):
         """Runs VirusTotal processing
         @return: full VirusTotal report.
         """
-        self.key = "virustotal"
         virustotal = []
 
         key = self.options.get("key", None)

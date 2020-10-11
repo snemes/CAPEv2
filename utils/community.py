@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (C) 2010-2015 Cuckoo Foundation.
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
@@ -20,7 +20,7 @@ import lib.cuckoo.common.colors as colors
 from lib.cuckoo.common.constants import CUCKOO_ROOT
 
 log = logging.getLogger(__name__)
-URL = "https://github.com/kevoreilly/community/archive/{0}.tar.gz"
+URL = "https://github.com/snemes/community/archive/{0}.tar.gz"
 
 
 def install(enabled, force, rewrite, filepath):

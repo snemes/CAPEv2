@@ -1,21 +1,10 @@
-from __future__ import absolute_import
-
 # Copyright (C) 2010-2015 Cuckoo Foundation.
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-
 import os
-
-try:
-    import re2 as re
-
-    HAVE_RE2 = True
-except ImportError:
-    HAVE_RE2 = False
-    import re
-
 import logging
+
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.objects import File, ProcDump
 from lib.cuckoo.common.constants import CUCKOO_ROOT
@@ -27,6 +16,7 @@ class ProcessMemory(Processing):
     """Analyze process memory dumps."""
 
     order = 10
+    key = "procmemory"
 
     def get_procmemory_pe(self, mem_pe):
         res = list()
@@ -48,7 +38,7 @@ class ProcessMemory(Processing):
 
             res.append(File(path).get_all())
         return res
-    
+
     def get_yara_memblock(self, addr_space, yaraoffset):
         lastoffset = 0
         lastmemmap = addr_space[0]
@@ -68,7 +58,6 @@ class ProcessMemory(Processing):
         """Run analysis.
         @return: structured results.
         """
-        self.key = "procmemory"
         results = []
         do_strings = self.options.get("strings", False)
         nulltermonly = self.options.get("nullterminated_only", True)
@@ -105,7 +94,7 @@ class ProcessMemory(Processing):
                     cape_yara=dmp_file.get_yara(category="CAPE"),
                     address_space=procdump.pretty_print(),
                 )
-                
+
                 for hit in proc["cape_yara"]:
                     hit["memblocks"] = dict()
                     for item in hit["addresses"]:

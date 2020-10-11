@@ -1,2 +1,10 @@
-
-*.DS_Store
+__pycache__
+.DS_Store
+*.bak
+*.sqlite
+conf/
+data/
+db/
+modules/
+storage/
+venv/

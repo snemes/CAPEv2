@@ -12,16 +12,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import
 import os
 import shutil
 import json
 import logging
-
-try:
-    import re2 as re
-except ImportError:
-    import re
 import hashlib
 import imp
 
@@ -38,6 +32,8 @@ try:
     HAVE_PYDEEP = True
 except ImportError:
     HAVE_PYDEEP = False
+
+log = logging.getLogger(__name__)
 
 ssdeep_threshold = 90
 
@@ -71,8 +67,6 @@ DATADUMP = 0x66
 MOREEGGSJS_PAYLOAD = 0x68
 MOREEGGSBIN_PAYLOAD = 0x69
 UPX = 0x1000
-
-log = logging.getLogger(__name__)
 
 code_mapping = {
     PLUGX_PAYLOAD: "PlugX Payload",
@@ -124,6 +118,7 @@ qakbot_id_map = {
 class CAPE(Processing):
     """CAPE output file processing."""
 
+    key = "CAPE"
     cape_config = {}
 
     def upx_unpack(self, file_data, CAPE_output):
@@ -470,7 +465,6 @@ class CAPE(Processing):
         """
         global cape_config
         cape_config = {}
-        self.key = "CAPE"
         CAPE_output = []
         self.script_dump_files = []
         meta = dict()

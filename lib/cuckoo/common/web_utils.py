@@ -220,7 +220,7 @@ def get_file_content(paths):
 
 def fix_section_permission(path):
     if not HAVE_PEFILE:
-        log.info("[-] Missed dependency pefile")
+        log.error("Missing dependency: pip3 install pefile")
         return
     try:
         if not IsPEImage:

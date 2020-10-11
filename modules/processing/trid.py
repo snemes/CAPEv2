@@ -3,7 +3,6 @@
 # tshelton@hawkdefense.com
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import os.path
 import subprocess
 import logging
@@ -11,17 +10,18 @@ from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.exceptions import CuckooProcessingError
 
-log = logging.getLogger()
+log = logging.getLogger(__name__)
 
 
 class TrID(Processing):
     """Extract TrID output from file."""
 
+    key = "trid"
+
     def run(self):
         """Run extract of trid output.
         @return: list of trid output.
         """
-        self.key = "trid"
         strings = []
 
         if self.task["category"] in ("file", "static"):

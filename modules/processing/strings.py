@@ -2,8 +2,8 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import os.path
+import logging
 
 HAVE_RE2 = False
 try:
@@ -17,15 +17,18 @@ from lib.cuckoo.common.utils import bytes2str
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.exceptions import CuckooProcessingError
 
+log = logging.getLogger(__name__)
+
 
 class Strings(Processing):
     """Extract strings from analyzed file."""
+
+    key = "strings"
 
     def run(self):
         """Run extract of printable strings.
         @return: list of printable strings.
         """
-        self.key = "strings"
         strings = []
 
         if self.task["category"] in ("file", "static"):

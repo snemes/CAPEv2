@@ -35,10 +35,10 @@ class CAPE_Compression(Signature):
     minimum = "1.3"
     evented = True
 
-    filter_apinames = set(["RtlDecompressBuffer"])
+    filter_apinames = {"RtlDecompressBuffer"}
 
     def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.compressed_binary = False
 
     def on_call(self, call, process):
@@ -61,10 +61,10 @@ class CAPE_RegBinary(Signature):
     minimum = "1.3"
     evented = True
 
-    filter_apinames = set(["RegSetValueExA", "RegSetValueExW", "RegCreateKeyExA", "RegCreateKeyExW"])
+    filter_apinames = {"RegSetValueExA", "RegSetValueExW", "RegCreateKeyExA", "RegCreateKeyExW"}
 
     def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.reg_binary = False
 
     def on_call(self, call, process):
@@ -88,10 +88,10 @@ class CAPE_Decryption(Signature):
     minimum = "1.3"
     evented = True
 
-    filter_apinames = set(["CryptDecrypt"])
+    filter_apinames = {"CryptDecrypt"}
 
     def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.encrypted_binary = False
 
     def on_call(self, call, process):
@@ -114,10 +114,10 @@ class CAPE_Unpacker(Signature):
     minimum = "1.3"
     evented = True
 
-    def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+    filter_apinames = {"NtAllocateVirtualMemory", "NtProtectVirtualMemory", "VirtualProtectEx"}
 
-    filter_apinames = set(["NtAllocateVirtualMemory", "NtProtectVirtualMemory", "VirtualProtectEx"])
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def on_call(self, call, process):
 
@@ -153,13 +153,13 @@ class CAPE_InjectionCreateRemoteThread(Signature):
     evented = True
     ttp = ["T1055"]
 
+    filter_categories = {"process", "threading"}
+
     def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.lastprocess = None
         self.write_detected = False
         self.remote_thread = False
-
-    filter_categories = set(["process", "threading"])
 
     def on_call(self, call, process):
         if process is not self.lastprocess:
@@ -228,11 +228,11 @@ class CAPE_InjectionProcessHollowing(Signature):
     evented = True
     ttp = ["T1055", "T1093"]
 
-    def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
-        self.lastprocess = None
+    filter_categories = {"process", "threading"}
 
-    filter_categories = set(["process", "threading"])
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lastprocess = None
 
     def on_call(self, call, process):
         if process is not self.lastprocess:
@@ -303,7 +303,7 @@ class CAPE_InjectionSetWindowLong(Signature):
     ttp = ["T1055", "T1181"]
 
     def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.lastprocess = None
         self.sharedsections = [
             "\\basenamedobjects\\shimsharedmemory",
@@ -314,25 +314,23 @@ class CAPE_InjectionSetWindowLong(Signature):
             "\\basenamedobjects\\urlzonessm_system",
         ]
 
-    filter_apinames = set(
-        [
-            "NtMapViewOfSection",
-            "NtOpenSection",
-            "NtCreateSection",
-            "FindWindowA",
-            "FindWindowW",
-            "FindWindowExA",
-            "FindWindowExW",
-            "PostMessageA",
-            "PostMessageW",
-            "SendNotifyMessageA",
-            "SendNotifyMessageW",
-            "SetWindowLongA",
-            "SetWindowLongW",
-            "SetWindowLongPtrA",
-            "SetWindowLongPtrW",
-        ]
-    )
+    filter_apinames = {
+        "NtMapViewOfSection",
+        "NtOpenSection",
+        "NtCreateSection",
+        "FindWindowA",
+        "FindWindowW",
+        "FindWindowExA",
+        "FindWindowExW",
+        "PostMessageA",
+        "PostMessageW",
+        "SendNotifyMessageA",
+        "SendNotifyMessageW",
+        "SetWindowLongA",
+        "SetWindowLongW",
+        "SetWindowLongPtrA",
+        "SetWindowLongPtrW",
+    }
 
     def on_call(self, call, process):
         if process is not self.lastprocess:
@@ -366,14 +364,14 @@ class CAPE_Injection(Signature):
     evented = True
     ttp = ["T1055"]
 
+    filter_categories = {"process"}
+
     def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.lastprocess = None
         self.process_handles = None
         self.write_handles = None
         self.injection_detected = False
-
-    filter_categories = set(["process"])
 
     def on_call(self, call, process):
         if process is not self.lastprocess:
@@ -416,10 +414,10 @@ class CAPE_EvilGrab(Signature):
     evented = True
     ttp = ["T1219"]
 
-    filter_apinames = set(["RegSetValueExA", "RegSetValueExW", "RegCreateKeyExA", "RegCreateKeyExW"])
+    filter_apinames = {"RegSetValueExA", "RegSetValueExW", "RegCreateKeyExA", "RegCreateKeyExW"}
 
     def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.reg_evilgrab_keyname = False
         self.reg_binary = False
 
@@ -452,10 +450,10 @@ class CAPE_PlugX(Signature):
     evented = True
     ttp = ["T1219"]
 
-    filter_apinames = set(["RtlDecompressBuffer", "memcpy"])
+    filter_apinames = {"RtlDecompressBuffer", "memcpy"}
 
     def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.compressed_binary = False
         self.config_copy = False
 
@@ -486,11 +484,11 @@ class CAPE_Doppelganging(Signature):
     evented = True
     ttp = ["T1055", "T1186"]
 
-    def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
-        self.lastprocess = None
+    filter_categories = {"process", "thread", "filesystem"}
 
-    filter_categories = set(["process", "thread", "filesystem",])
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lastprocess = None
 
     def on_call(self, call, process):
         if process is not self.lastprocess:
@@ -519,10 +517,10 @@ class CAPE_TransactedHollowing(Signature):
     evented = True
     ttp = ["T1055", "T1093"]
 
-    filter_apinames = set(["RtlSetCurrentTransaction", "NtRollbackTransaction", "NtMapViewOfSection"])
+    filter_apinames = {"RtlSetCurrentTransaction", "NtRollbackTransaction", "NtMapViewOfSection"}
 
     def __init__(self, *args, **kwargs):
-        Signature.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.transaction_set = False
         self.transaction_rollback = False
         self.transacted_hollowing = False

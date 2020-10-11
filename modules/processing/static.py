@@ -2,8 +2,6 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
-from __future__ import print_function
 import json
 import logging
 import os
@@ -60,7 +58,7 @@ try:
     HAVE_CRYPTO = True
 except ImportError:
     HAVE_CRYPTO = False
-    print("Missed cryptography library: pip3 install cryptography")
+    print("Missing cryptography library: pip3 install cryptography")
 
 try:
     from whois import whois
@@ -93,7 +91,7 @@ try:
     HAVE_OLEFILE = True
 except ImportError:
     HAVE_OLEFILE = False
-    print("Missed olefile dependency: pip3 install olefile")
+    print("Missing olefile dependency: pip3 install olefile")
 
 try:
     from oletools import oleobj
@@ -109,7 +107,7 @@ try:
 
     HAVE_OLETOOLS = True
 except ImportError:
-    print("Missed oletools dependency: pip3 install oletools")
+    print("Missing oletools dependency: pip3 install oletools")
     HAVE_OLETOOLS = False
 
 from lib.cuckoo.common.utils import convert_to_printable
@@ -127,7 +125,7 @@ try:
     HAVE_XLM_DEOBF = True
     from XLMMacroDeobfuscator.deobfuscator import process_file as XLMMacroDeobf
 except ImportError:
-    print("Missed dependey XLMMacroDeobfuscator: pip3 install git+https://github.com/DissectMalware/XLMMacroDeobfuscator.git")
+    print("Missing dependency XLMMacroDeobfuscator: pip3 install git+https://github.com/DissectMalware/XLMMacroDeobfuscator.git")
     HAVE_XLM_DEOBF = False
 
 try:
@@ -256,7 +254,7 @@ class DotNETExecutable(object):
                 ret.append(item)
             return ret
         except Exception as e:
-            log.error(e, exc_info=True)
+            log.exception(e)
             return None
 
     def _get_assembly_refs(self):
@@ -281,7 +279,7 @@ class DotNETExecutable(object):
             return ret
 
         except Exception as e:
-            log.error(e, exc_info=True)
+            log.exception(e)
             return None
 
     def _get_assembly_info(self):
@@ -295,7 +293,7 @@ class DotNETExecutable(object):
                     ret["version"] = convert_to_printable(line[8:].strip())
             return ret
         except Exception as e:
-            log.error(e, exc_info=True)
+            log.exception(e)
             return None
 
     def _get_type_refs(self):
@@ -315,7 +313,7 @@ class DotNETExecutable(object):
             return ret
 
         except Exception as e:
-            log.error(e, exc_info=True)
+            log.exception(e)
             return None
 
     def run(self):
@@ -366,7 +364,7 @@ class PortableExecutable(object):
             if result:
                 return result
         except Exception as e:
-            log.error(e, exc_info=True)
+            log.exception(e)
 
         return None
 
@@ -390,7 +388,7 @@ class PortableExecutable(object):
                     elif dbgdata[:4] == "NB10":
                         return convert_to_printable(str(dbgdata[16:]).rstrip("\0"))
         except Exception as e:
-            log.error(e, exc_info=True)
+            log.exception(e)
 
         return None
 
@@ -419,7 +417,7 @@ class PortableExecutable(object):
                 imports_section["imports"] = symbols
                 imports.append(imports_section)
             except Exception as e:
-                log.error(e, exc_info=True)
+                log.exception(e)
                 continue
 
         return imports
@@ -570,7 +568,7 @@ class PortableExecutable(object):
                 section["entropy"] = "{0:.02f}".format(float(entry.get_entropy()))
                 sections.append(section)
             except Exception as e:
-                log.error(e, exc_info=True)
+                log.exception(e)
                 continue
 
         return sections
@@ -682,7 +680,7 @@ class PortableExecutable(object):
                                     resource["entropy"] = "{0:.02f}".format(float(_get_entropy(data)))
                                     resources.append(resource)
                 except Exception as e:
-                    log.error(e, exc_info=True)
+                    log.exception(e)
                     continue
 
         return resources
@@ -726,27 +724,15 @@ class PortableExecutable(object):
                     offset = entry.directory.entries[0].data.struct.OffsetToData
                     size = entry.directory.entries[0].data.struct.Size
                     icon = peicon.get_icon_file(iconidx, self.pe.get_memory_mapped_image()[offset : offset + size])
-
-                    byteio = BytesIO()
-                    byteio.write(icon)
-                    byteio.seek(0)
-                    try:
-                        img = Image.open(byteio)
-                    except OSError as e:
-                        byteio.close()
-                        log.error(e)
-                        return None, None, None
-
+                    img = Image.open(BytesIO(icon))
                     output = BytesIO()
                     img.save(output, format="PNG")
-
                     img = img.resize((8, 8), Image.BILINEAR)
                     img = img.convert("RGB").convert("P", palette=Image.ADAPTIVE, colors=2).convert("L")
                     lowval = img.getextrema()[0]
                     img = img.point(lambda i: 255 if i > lowval else 0)
                     img = img.convert("1")
                     simplified = bytearray(img.getdata())
-
                     m = hashlib.md5()
                     m.update(output.getvalue())
                     fullhash = m.hexdigest()
@@ -758,7 +744,7 @@ class PortableExecutable(object):
                     img.close()
                     return icon, fullhash, simphash
         except Exception as e:
-            log.error(e, exc_info=True)
+            log.exception(e)
 
         return None, None, None
 
@@ -795,7 +781,7 @@ class PortableExecutable(object):
                                 entry["value"] = "0x0" + entry["value"][2:5] + " 0x0" + entry["value"][7:10]
                             infos.append(entry)
             except Exception as e:
-                log.error(e, exc_info=True)
+                log.exception(e)
                 continue
 
         return infos
@@ -1046,8 +1032,7 @@ class PDF(object):
                                         if elem:
                                             self.base_uri = elem.getValue()
         except Exception as e:
-            log.error(e, exc_info=True)
-            pass
+            log.exception(e)
 
     def _parse(self, filepath):
         """Parses the PDF for static information. Uses V8Py from peepdf to
@@ -1124,7 +1109,7 @@ class PDF(object):
                             jslist, unescapedbytes, urlsfound, errors, ctxdummy = analyseJS(decoded_stream.strip())
                             jsdata = jslist[0]
                         except Exception as e:
-                            log.error(e, exc_info=True)
+                            log.exception(e)
                             continue
                         if len(errors):
                             continue
@@ -1341,7 +1326,7 @@ class Office(object):
                     if temp_results:
                         results["office_rtf"] = temp_results
                 except Exception as e:
-                    log.error(e, exc_info=True)
+                    log.exception(e)
             else:
                 try:
                     vba = VBA_Parser(filepath)
@@ -1360,7 +1345,7 @@ class Office(object):
         except AttributeError:
             log.warning("OleFile library bug: AttributeError! fix: pip3 install -U olefile")
         except Exception as e:
-            log.error(e, exc_info=True)
+            log.exception(e)
 
         metares = officeresults["Metadata"] = dict()
         macro_folder = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(self.results["info"]["id"]), "macros")
@@ -1414,7 +1399,7 @@ class Office(object):
                     try:
                         iocs = vbadeobf.parse_macro(vba_code)
                     except Exception as e:
-                        log.error(e, exc_info=True)
+                        log.exception(e)
                     hex_strs = detect_hex_strings(vba_code)
                     if autoexec:
                         for keyword, description in autoexec:
@@ -1449,7 +1434,7 @@ class Office(object):
                     if vba_code:
                         vba2graph_gen(vba_code, vba2graph_path)
                 except Exception as e:
-                    log.error(e, exc_info=True)
+                    log.exception(e)
         else:
             metares["HasMacros"] = "No"
 
@@ -1491,7 +1476,7 @@ class Office(object):
                     xlmmacro["info"]["yara_macro"] = File(macro_file).get_yara(category="macro")
                     xlmmacro["info"]["yara_macro"].extend(File(macro_file).get_yara(category="CAPE"))
             except Exception as e:
-                log.error(e, exc_info=True)
+                log.exception(e)
 
         return results
 
@@ -1845,7 +1830,7 @@ class HwpDocument(object):
 	        stream_content = zlib.decompress(ole.openstream(stream).read(), -15)
                 self.files[stream_name] = stream_content
 	    except Exception as e:
-            log.error(e, exc_info=True)
+            log.exception(e)
         ole.close()
 
     def extract_eps(self):
@@ -1898,8 +1883,7 @@ class Java(object):
                     p = Popen([self.decomp_jar, jar_file], stdout=PIPE)
                 results["java"]["decompiled"] = convert_to_printable(p.stdout.read())
             except Exception as e:
-                log.error(e, exc_info=True)
-                pass
+                log.exception(e)
 
             try:
                 os.unlink(jar_file)
@@ -2605,11 +2589,12 @@ class WindowsScriptFile(object):
 class Static(Processing):
     """Static analysis."""
 
+    key = "static"
+
     def run(self):
         """Run analysis.
         @return: results dict.
         """
-        self.key = "static"
         static = {}
 
         if self.task["category"] == "file":
@@ -2617,7 +2602,7 @@ class Static(Processing):
 
             thetype = File(self.file_path).get_type()
             if not HAVE_OLETOOLS and "Zip archive data, at least v2.0" in thetype and package in ("doc", "ppt", "xls", "pub"):
-                log.info("Missed dependencies: pip3 install oletools")
+                log.info("Missing dependency: pip3 install oletools")
 
             if HAVE_PEFILE and ("PE32" in thetype or "MS-DOS executable" in thetype):
                 static = PortableExecutable(self.file_path, self.results).run()

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (C) 2010-2015 Cuckoo Foundation.
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
@@ -19,7 +19,7 @@ if sys.version_info[:2] < (3, 6):
 try:
     import pebble
 except ImportError:
-    sys.exit("Missed dependency: pip3 install Pebble")
+    sys.exit("Missing dependency: pip3 install Pebble")
 
 log = logging.getLogger()
 

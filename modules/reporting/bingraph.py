@@ -59,8 +59,10 @@ class BinGraph(Report):
                         bingraph_gen(bingraph_args_dict)
                     except Exception as e:
                         log.warning("Can't generate bingraph for {}: {}".format(self.file_path, e))
+                        log.exception(e)
             except Exception as e:
                 log.info(e)
+                log.exception(e)
 
             for key in ("dropped", "procdump", "CAPE"):
                 for block in results.get(key, []) or []:
@@ -83,3 +85,4 @@ class BinGraph(Report):
                             bingraph_gen(bingraph_args_dict)
                         except Exception as e:
                             log.warning("Can't generate report for {}: {}".format(path, e))
+                            log.exception(e)

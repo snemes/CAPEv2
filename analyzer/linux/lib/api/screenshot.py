@@ -17,7 +17,7 @@ try:
     try:
         import pyscreenshot as ImageGrab
     except ImportError:
-        log.error("Missed dependency: pip3 install pyscreenshot")
+        log.error("Missing dependency: pip3 install pyscreenshot")
         HAVE_PIL = False
     log.debug("Importing 'PIL.ImageChops'")
     # from PIL import ImageChops

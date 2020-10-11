@@ -2,7 +2,6 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import os
 import logging
 import datetime
@@ -362,12 +361,18 @@ class Processes:
         for file_name in os.listdir(self._logs_path):
             file_path = os.path.join(self._logs_path, file_name)
 
+            if not file_path.endswith(".bson"):
+                continue
+
+            if not os.path.isfile(file_path):
+                continue
+
+            if not os.stat(file_path).st_size:
+                continue
+
             # Check if Loop Detection is enabled globally or locally (as an option)
             if cfg_process.loop_detection.enabled or self.options.get("loop_detection"):
                 self.compress_log_file(file_path)
-
-            if os.path.isdir(file_path):
-                continue
 
             # Skipping the current log file if it's too big.
             if os.stat(file_path).st_size > cfg.processing.analysis_size_limit:
@@ -401,17 +406,14 @@ class Processes:
         return results
 
     def compress_log_file(self, file_path):
-        if file_path.endswith(".bson") and os.stat(file_path).st_size:
-            try:
-                if not CuckooBsonCompressor().run(file_path):
-                    log.debug("Could not execute loop detection analysis.")
-                else:
-                    log.debug("BSON was compressed successfully.")
-                    return True
-            except Exception as e:
-                log.error("BSON compression failed on file {}: {}".format(file_path, e))
-        else:
-            log.debug("Nonexistent or empty BSON file {}".format(file_path))
+        try:
+            if not CuckooBsonCompressor().run(file_path):
+                log.debug("Could not execute loop detection analysis.")
+            else:
+                log.debug("BSON was compressed successfully.")
+                return True
+        except Exception as e:
+            log.error("BSON compression failed on file {}: {}".format(file_path, e))
 
         return False
 

@@ -1,4 +1,3 @@
-from __future__ import absolute_import
 import os
 
 try:
@@ -565,9 +564,10 @@ def deobfuscate(MESSAGE):
 class Curtain(Processing):
     """Parse Curtain log for PowerShell 4104 Events."""
 
+    key = "curtain"
+
     def run(self):
 
-        self.key = "curtain"
         # Remove some event entries which are commonly found in all samples (noise reduction)
         noise = [
             "$global:?",

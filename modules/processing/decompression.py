@@ -2,39 +2,39 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import os
 import glob
 import zipfile
+import logging
 
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.exceptions import CuckooProcessingError
 
+log = logging.getLogger(__name__)
+
 
 class Decompression(Processing):
-    """Decompresses analysis artifacts that have been compressed by the compression reporting module so re-analysis can be performed"""
+    """Decompresses analysis artifacts that have been compressed by the
+    compression reporting module so re-analysis can be performed."""
 
     order = 0
+    key = "decompression"
+
+    def extract(self, srcpath, dstpath):
+        log.debug("Extracting %r to %r", srcpath, dstpath)
+        try:
+            with zipfile.ZipFile(srcpath, "r") as zf:
+                zf.extractall(path=dstpath)
+            os.remove(srcpath)
+        except Exception as e:
+            raise CuckooProcessingError("Error extracting ZIP: %s", e)
 
     def run(self):
-        self.key = "decompression"
+        filepath = self.memory_path + ".zip"
+        if os.path.exists(filepath):
+            self.extract(filepath, self.analysis_path)
 
-        if os.path.exists(self.memory_path + ".zip"):
-            try:
-                thezip = zipfile.ZipFile(self.memory_path + ".zip", "r")
-                thezip.extractall(path=self.analysis_path)
-                thezip.close()
-                os.unlink(self.memory_path + ".zip")
-            except Exception as e:
-                raise CuckooProcessingError("Error extracting ZIP: %s" % e)
-
-        for fzip in glob.glob(os.path.join(self.pmemory_path, "*.zip")):
-            try:
-                thezip = zipfile.ZipFile(fzip, "r")
-                thezip.extractall(path=self.pmemory_path)
-                thezip.close()
-                os.unlink(fzip)
-            except Exception as e:
-                raise CuckooProcessingError("Error extracting ZIP: %s" % e)
+        for filepath in glob.iglob(os.path.join(self.pmemory_path, "*.zip")):
+            self.extract(filepath, self.pmemory_path)
 
         return []

@@ -12,14 +12,12 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from __future__ import absolute_import
 import os
 import logging
+
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.objects import File
-
-log = logging.getLogger(__name__)
 
 try:
     from mmbot import MaliciousMacroBot
@@ -28,14 +26,17 @@ try:
 except:
     HAVE_MMBOT = False
 
+log = logging.getLogger(__name__)
+
 
 class MMBot(Processing):
     """MaliciousMacroBot analysis.
     @return: malicious label and scores
-    7"""
+    """
+
+    key = "mmbot"
 
     def run(self):
-        self.key = "mmbot"
         results = dict()
         ftype = File(self.file_path).get_type()
 
@@ -55,10 +56,11 @@ class MMBot(Processing):
             ):
                 return results
 
-            opts = dict()
-            opts["benign_path"] = self.options.get("benign_path", os.path.join(CUCKOO_ROOT, "data", "mmbot", "benign"))
-            opts["malicious_path"] = self.options.get("malicious_path", os.path.join(CUCKOO_ROOT, "data", "mmbot", "malicious"))
-            opts["model_path"] = self.options.get("model_path", os.path.join(CUCKOO_ROOT, "data", "mmbot", "model"))
+            opts = {
+                "benign_path": os.path.join(CUCKOO_ROOT, self.options.benign_path or os.path.join("data", "mmbot", "benign")),
+                "malicious_path": os.path.join(CUCKOO_ROOT, self.options.malicious_path or os.path.join("data", "mmbot", "malicious")),
+                "model_path": os.path.join(CUCKOO_ROOT, self.options.model_path or os.path.join("data", "mmbot", "model")),
+            }
 
             try:
                 mmb = MaliciousMacroBot(opts["benign_path"], opts["malicious_path"], opts["model_path"], retain_sample_contents=False)
@@ -76,7 +78,7 @@ class MMBot(Processing):
                     if not os.path.isfile(link_path):
                         os.symlink(self.file_path, link_path)
 
-            except Exception as xcpt:
-                log.error("Failed to run mmbot processing: %s", xcpt)
+            except Exception as e:
+                log.error("Failed to run mmbot processing: %s", e)
 
         return results

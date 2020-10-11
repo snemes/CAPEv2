@@ -2,22 +2,26 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import os
 import json
+import logging
+
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.objects import File
 from lib.cuckoo.common.utils import convert_to_printable
+
+log = logging.getLogger(__name__)
 
 
 class Dropped(Processing):
     """Dropped files analysis."""
 
+    key = "dropped"
+
     def run(self):
         """Run analysis.
         @return: list of dropped files with related information.
         """
-        self.key = "dropped"
         dropped_files, meta = [], {}
         buf = self.options.get("buffer", 8192)
 

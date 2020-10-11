@@ -202,7 +202,7 @@ class FileUpload(ProtocolHandler):
         else:
             filepath, pids, metadata, category = None, [], b"", b""
 
-        log.debug("Task #%s: File upload for %r", self.task_id, dump_path)
+        log.debug("Task #%s: File upload for %r", self.task_id, dump_path.decode())
         file_path = os.path.join(self.storagepath, dump_path.decode("utf-8"))
 
         try:

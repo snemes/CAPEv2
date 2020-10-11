@@ -2,8 +2,8 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import os
+import logging
 from six.moves import zip
 
 HAVE_PYGAL = False
@@ -18,14 +18,17 @@ from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.exceptions import CuckooProcessingError
 
+log = logging.getLogger(__name__)
+
 
 class Usage(Processing):
     """Converts collected usage data to image for web display
        and performs other processing on usage data
     """
 
+    key = "usage"
+
     def run(self):
-        self.key = "usage"
         usage = {}
 
         if not HAVE_PYGAL:

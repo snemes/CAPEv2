@@ -2,7 +2,6 @@
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-from __future__ import absolute_import
 import codecs
 import time
 import logging
@@ -23,15 +22,15 @@ try:
 except ImportError:
     HAVE_REQUEST = False
 
-
 log = logging.getLogger(__name__)
 report_cfg = Config("reporting")
-
 db = Database()
 
 
 class AnalysisInfo(Processing):
     """General information about analysis session."""
+
+    key = "info"
 
     def had_timeout(self):
         """ Test if the analysis had a timeout
@@ -71,8 +70,6 @@ class AnalysisInfo(Processing):
         """Run information gathering.
         @return: information dict.
         """
-        self.key = "info"
-
         try:
             started = time.strptime(self.task["started_on"], "%Y-%m-%d %H:%M:%S")
             started = datetime.fromtimestamp(time.mktime(started))

@@ -4,8 +4,11 @@
 
 import os
 import xml.etree.ElementTree
+import logging
 
 from lib.cuckoo.common.abstracts import Processing
+
+log = logging.getLogger(__name__)
 
 
 class ProcmonLog(list):
@@ -34,8 +37,9 @@ class ProcmonLog(list):
 class Procmon(Processing):
     """Extract events from procmon.exe output."""
 
+    key = "procmon"
+
     def run(self):
-        self.key = "procmon"
         procmon_xml = os.path.join(self.analysis_path, "procmon.xml")
         if not os.path.exists(procmon_xml):
             return

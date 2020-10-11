@@ -62,7 +62,14 @@
 
                         <ul style="margin-bottom: 0;">
                         {% for sign in file.yara %}
-                            <li>{{sign.name}} - {{sign.meta.description}}</li>
+                        <li>{{sign.name}}
+                            {% if sign.meta.description %}
+                                - {{sign.meta.description}}
+                            {% endif %}
+                            {% if sign.meta.author %}
+                                - Author: {{sign.meta.author}}
+                            {% endif %}
+                        </li>
                         {% endfor %}
                         </ul>
                     </td>
@@ -74,7 +81,16 @@
                     <td>
                         <ul style="margin-bottom: 0;">
                         {% for sign in file.cape_yara %}
-                            <li>{{sign.meta.cape_type}} - Author: {{sign.meta.author}}</li>
+                        <li>{{sign.name}}
+                            {% if sign.meta.cape_type %}
+                                - {{sign.meta.cape_type}}
+                            {% elif sign.meta.description %}
+                                - {{sign.meta.description}}
+                            {% endif %}
+                            {% if sign.meta.author %}
+                                - Author: {{sign.meta.author}}
+                            {% endif %}
+                        </li>
                         {% endfor %}
                         </ul>
                     </td>
