@@ -18,7 +18,7 @@ from lib.cuckoo.common.exceptions import CuckooDependencyError
 from lib.cuckoo.common.objects import File, URL, PCAP, Static
 from lib.cuckoo.common.utils import create_folder, Singleton, classlock, SuperLock, get_options
 from lib.cuckoo.common.demux import demux_sample
-from lib.cuckoo.common.cape_utils import static_extraction
+from lib.cuckoo.common.cape_utils import static_extraction, static_config_lookup
 
 try:
     from sqlalchemy import create_engine, Column, event
@@ -30,7 +30,7 @@ try:
 
     Base = declarative_base()
 except ImportError:
-    raise CuckooDependencyError("Unable to import sqlalchemy " "(install with `pip3 install sqlalchemy`)")
+    raise CuckooDependencyError("Unable to import sqlalchemy (install with `pip3 install sqlalchemy`)")
 
 log = logging.getLogger(__name__)
 conf = Config("cuckoo")
@@ -1324,6 +1324,8 @@ class Database(object, metaclass=Singleton):
         # extract files from the (potential) archive
         extracted_files = demux_sample(file_path, package, options)
         # check if len is 1 and the same file, if diff register file, and set parent
+        if not isinstance(file_path, bytes):
+            file_path = file_path.encode("utf-8")
         if extracted_files and file_path not in extracted_files:
             sample_parent_id = self.register_sample(File(file_path), source_url=source_url)
             if conf.cuckoo.delete_archive:
@@ -1343,9 +1345,14 @@ class Database(object, metaclass=Singleton):
         # create tasks for each file in the archive
         for file in extracted_files:
             if static:
-                config = static_extraction(file)
-                if config:
-                    task_id = self.add_static(file_path=file, priority=priority, tlp=tlp)
+                # we don't need to process extra file if we already have it and config
+                config = static_config_lookup(file)
+                if not config:
+                    config = static_extraction(file)
+                    if config:
+                        task_id = self.add_static(file_path=file, priority=priority, tlp=tlp)
+                else:
+                    task_ids.append(config["id"])
             if not config and only_extraction is False:
                 task_id = self.add_path(
                     file_path=file.decode(),
@@ -1920,10 +1927,16 @@ class Database(object, metaclass=Singleton):
         }
 
         sizes_mongo = {
-            32: "dropped.md5",
-            40: "dropped.sha1",
-            64: "dropped.sha256",
-            128: "dropped.sha512",
+            32: "md5",
+            40: "sha1",
+            64: "sha256",
+            128: "sha512",
+        }
+
+        folders = {
+            "dropped": "files",
+            "CAPE": "CAPE",
+            "procdump": "procdump",
         }
 
         query_filter = sizes.get(len(sample_hash), "")
@@ -1940,13 +1953,35 @@ class Database(object, metaclass=Singleton):
                         sample = [path]
 
                 if sample is None:
-                    tasks = results_db.analysis.find({sizes_mongo.get(len(sample_hash), ""): sample_hash})
+                    tasks = results_db.analysis.find({"CAPE.payloads." + sizes_mongo.get(len(sample_hash), ""): sample_hash},
+                                                     {"CAPE.payloads": 1, "_id": 0, "info.id":1 })
                     if tasks:
                         for task in tasks:
-                            path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task["info"]["id"]), "files", sample_hash)
-                            if os.path.exists(path):
-                                sample = [path]
+                            for block in task.get("CAPE", {}).get("payloads", []) or []:
+                                if block[sizes_mongo.get(len(sample_hash), "")] == sample_hash:
+                                    path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task["info"]["id"]), folders.get("CAPE"),
+                                                        block["sha256"])
+                                    if os.path.exists(path):
+                                        sample = [path]
+                                        break
+                            if sample:
                                 break
+
+                    for category in ("dropped", "procdump"):
+                        # we can't filter more if query isn't sha256
+                        tasks = results_db.analysis.find({category + "." + sizes_mongo.get(len(sample_hash), ""): sample_hash},
+                                                         {category: 1, "_id": 0, "info.id":1 })
+                        if tasks:
+                            for task in tasks:
+                                for block in task.get(category, []) or []:
+                                    if block[sizes_mongo.get(len(sample_hash), "")] == sample_hash:
+                                        path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task["info"]["id"]), folders.get(category),
+                                                            block["sha256"])
+                                        if os.path.exists(path):
+                                            sample = [path]
+                                            break
+                                if sample:
+                                    break
 
                 if sample is None:
                     # search in temp folder if not found in binaries
@@ -1964,7 +1999,6 @@ class Database(object, metaclass=Singleton):
                 pass
             except SQLAlchemyError as e:
                 log.debug("Database error viewing task: {0}".format(e))
-                pass
             finally:
                 session.close()
 

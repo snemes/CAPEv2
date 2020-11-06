@@ -1,3 +1,14 @@
+### [31-10-2020] Pre Halloween edition
+* [Box-js](https://github.com/kirk-sayre-work/box-js/) integration [docs](https://capev2.readthedocs.io/en/latest/integrations/box-js.html)
+* Fixed support for office in x64 VMs
+
+### [22-10-2020]
+* cape.py rewrite so it affects `api/tasks/get/config/` so before it was list of configs and it has `cape_name`, now its like `[{malware_family:{config}}]`
+
+### [20-10-2020]
+* static config extraction lookup in database before scan file with yara and extract
+* resubmit added to CAPE/procdump tabs
+
 ### [15-10-2020]
 * Huge code unification and cleanup between `submission/views.py` and `api/views.py`
 * Improve error messages on bulk submission, for failed samples/hashes

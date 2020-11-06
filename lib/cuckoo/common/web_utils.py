@@ -161,7 +161,6 @@ apilimiter = {
 
 # https://django-ratelimit.readthedocs.io/en/stable/rates.html#callables
 def my_rate_seconds(group, request):
-
     # RateLimits not enabled
     if rateblock is False:
         return "99999999999999/s"
@@ -186,7 +185,6 @@ def my_rate_seconds(group, request):
     return "0/s"
 
 def my_rate_minutes(group, request):
-
     # RateLimits not enabled
     if rateblock is False:
         return "99999999999999/m"
@@ -269,12 +267,9 @@ def fix_section_permission(path):
             return
         for id in range(len(pe.sections)):
             if pe.sections[id].Name.rstrip("\0") == ".rdata" and hex(pe.sections[id].Characteristics)[:3] == "0x4":
-                log.info("section found")
                 pe.sections[id].Characteristics += pefile.SECTION_CHARACTERISTICS["IMAGE_SCN_MEM_WRITE"]
-                log.info(pe.sections[id].Characteristics)
                 pe.write(filename=path)
         pe.close()
-        log.info("close")
     except Exception as e:
         log.info(e)
 
@@ -312,10 +307,26 @@ def get_platform(magic):
 
 def download_file(**kwargs):
 
-    static, package, timeout, priority, options, machine, platform, tags, custom, memory, \
+    """ Example of kwargs
+    {
+        "errors": [],
+        "content": content,
+        "request": request,
+        "task_id": [],
+        "url": False,
+        "params": {},
+        "headers": {},
+        "service": "tasks_create_file_API",
+        "path": tmp_path,
+        "fhash": False,
+        "options": options,
+        "only_extraction": False,
+    }
+    """
+
+    static, package, timeout, priority, _, machine, platform, tags, custom, memory, \
             clock, enforce_timeout, shrike_url, shrike_msg, shrike_sid, shrike_refer, unique, referrer, \
             tlp = parse_request_arguments(kwargs["request"])
-
     onesuccess = False
     if tags:
         if not all([tag.strip() in all_vms_tags for tag in tags.split(",")]):
@@ -330,7 +341,7 @@ def download_file(**kwargs):
             logging.error(e)
             return "error", {"error": "Provided hash not found on {}".format(kwargs["service"])}
 
-        if r.status_code == 200 and r.content != "Hash Not Present" and "The request requires higher privileges than provided by the access token" not in r.content:
+        if r.status_code == 200 and r.content != b"Hash Not Present" and b"The request requires higher privileges than provided by the access token" not in r.content:
             kwargs["content"] = r.content
         elif r.status_code == 403:
             return "error", {"error": "API key provided is not a valid {0} key or is not authorized for {0} downloads".format(kwargs["service"])}
@@ -358,14 +369,27 @@ def download_file(**kwargs):
         return "error", {"error": "Error writing {} storing/download file to temporary path".format(kwargs["service"])}
 
     onesuccess = True
-    file_type = get_magic_type(kwargs["path"])
-    if disable_x64 is True and kwargs["path"] and file_type and ("x86-64" in file_type or "PE32+" in file_type):
+    magic_type = get_magic_type(kwargs["path"])
+    if disable_x64 is True and kwargs["path"] and magic_type and ("x86-64" in magic_type or "PE32+" in magic_type):
         if len(kwargs["request"].FILES) == 1:
             return "error", {"error": "Sorry no x64 support yet"}
 
-    options, timeout, enforce_timeout = recon(kwargs["path"], options, timeout, enforce_timeout)
+    kwargs["options"], timeout, enforce_timeout = recon(kwargs["path"], kwargs["options"], timeout, enforce_timeout)
     if not kwargs.get("task_machines", []):
         kwargs["task_machines"] = [None]
+
+    platform = get_platform(magic_type)
+    if machine.lower() == "all":
+        kwargs["task_machines"] = [vm.name for vm in db.list_machines(platform=platform)]
+    elif machine:
+        machine_details = db.view_machine(machine)
+        if hasattr(machine_details, "platform") and not machine_details.platform == platform:
+            return "error", {"error": "Wrong platform, {} VM selected for {} sample".format(machine_details.platform, platform)}
+        else:
+            kwargs["task_machines"] = [machine]
+
+    else:
+        kwargs["task_machines"] = ["first"]
 
     for machine in kwargs.get("task_machines", []):
         if machine == "first":
@@ -376,7 +400,7 @@ def download_file(**kwargs):
             file_path=kwargs["path"],
             package=package,
             timeout=timeout,
-            options=options,
+            options=kwargs["options"],
             priority=priority,
             machine=machine,
             custom=custom,

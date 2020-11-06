@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
-<p style="margin-bottom: 10px;"><img src="{{ STATIC_URL }}graphic/cape.png" /></p>
 <ul class="nav nav-tabs">
     <li class="active"><a href="#files" data-toggle="tab">Files</a></li>
     <li><a href="#urls" data-toggle="tab">URLs</a></li>
@@ -111,8 +110,11 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if analysis.detections != None %}
-                                <span style="color:#EE1B2F;" class="text-primary"><b>{{analysis.detections}}</b></span>
+                            {% if analysis.detections %}
+                                <form action="{% url "search" %}" method="post">
+                                    <input type="hidden" id="search" type="text" name="search" value="detections:{{analysis.detections}}">
+                                    <input style="color:#EE1B2F;font-weight: bold;" class="btn btn-default" type="submit" value="{{analysis.detections}}">
+                                </form>
                             {% endif %}
                         </td>
                         {% if config.expanded_dashboard %}
@@ -431,7 +433,7 @@
                         {% endif %}
                         {% if config.suricata %}
                         <td>
-                            <span class="mono">
+                            <center><span class="mono">
                                 {% if analysis.suri_alert_cnt %}
                                 <a href="{% url "surialert" analysis.id %}" target="_blank">{{analysis.suri_alert_cnt}}</a><!--
                                 {% else %}
@@ -455,6 +457,7 @@
                                     {% endif %}
                                 {% endif %}
                             --></span>
+                        </center>
                         </td>
                         {% endif %}
                         {% if config.virustotal %}
@@ -721,16 +724,14 @@
                     <td>
                         {% if analysis.malscore != None %}
                         <span {% if analysis.malscore <= 2.0 %}
-                                class="label label-success"
-                                {% elif analysis.malscore <= 6.0 %}
-                                class="label label-warning"
-                                {% else %}
-                                class="label label-danger"
-                                {% endif %}
-                                {% if analysis.detections %}
-                                title="{{analysis.detections}}"
-                                {% endif %}
-                                >{{analysis.malscore|floatformat:1}}</span>
+                            class="label label-success"
+                        {% elif analysis.malscore <= 6.0 %}
+                            class="label label-warning"
+                        {% else %}
+                            class="label label-danger"
+                        {% endif %}
+                        {% if analysis.detections %}title="{{analysis.detections}}"{% endif %}
+                            >{{analysis.malscore|floatformat:1}}</span>
                         {% else %}
                         <span class="mono">None</span>
                         {% endif %}
@@ -740,9 +741,9 @@
                     <td>
                         <span class="mono">
                             {% if analysis.detections %}
-                            {{analysis.detections}}
+                                {{analysis.detections}}
                             {% else %}
-                            None
+                                None
                             {% endif %}
                         </span>
                     </td>
