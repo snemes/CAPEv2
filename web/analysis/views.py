@@ -30,8 +30,8 @@ sys.path.append(settings.CUCKOO_PATH)
 
 from lib.cuckoo.core.database import Database, Task, TASK_PENDING
 from lib.cuckoo.common.config import Config
-from lib.cuckoo.common.constants import CUCKOO_ROOT
-from lib.cuckoo.common.web_utils import perform_malscore_search, perform_search, perform_ttps_search, search_term_map, my_rate_minutes, my_rate_seconds, apilimiter, apiconf, rateblock
+from lib.cuckoo.common.constants import CUCKOO_ROOT, ANALYSIS_BASE_PATH
+from lib.cuckoo.common.web_utils import perform_malscore_search, perform_search, perform_ttps_search, my_rate_minutes, my_rate_seconds, rateblock, statistics
 
 # why? why? why? this introduces an unnecesary coupling
 import modules.processing.network as network
@@ -56,6 +56,30 @@ except ImportError:
     HAVE_PYZIPPER = False
 
 TASK_LIMIT = 25
+
+processing_cfg = Config("processing")
+reporting_cfg = Config("reporting")
+
+# On demand features
+HAVE_FLARE_CAPA = False
+if processing_cfg.flare_capa.on_demand:
+    from lib.cuckoo.common.cape_utils import flare_capa_details, HAVE_FLARE_CAPA
+
+HAVE_VBA2GRAPH = False
+if processing_cfg.vba2graph.on_demand:
+    from lib.cuckoo.common.cape_utils import vba2graph_func, HAVE_VBA2GRAPH
+
+
+if reporting_cfg.bingraph.on_demand:
+    try:
+        from lib.cuckoo.common.graphs.binGraph.binGraph import generate_graphs as bingraph_gen
+        from modules.reporting.bingraph import bingraph_args_dict
+        HAVE_BINGRAPH = True
+    except ImportError:
+        HAVE_BINGRAPH = False
+else:
+    HAVE_BINGRAPH = False
+
 
 # Used for displaying enabled config options in Django UI
 enabledconf = dict()
@@ -89,8 +113,6 @@ if enabledconf["elasticsearchdb"]:
     es = Elasticsearch(hosts=[{"host": settings.ELASTIC_HOST, "port": settings.ELASTIC_PORT,}], timeout=60)
 
 db = Database()
-
-maxsimilar = int(Config("reporting").malheur.maxsimilar)
 
 # Conditional decorator for web authentication
 class conditional_login_required(object):
@@ -336,11 +358,12 @@ def index(request, page=1):
 @require_safe
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def pending(request):
-    tasks = db.list_tasks(status=TASK_PENDING)
+    db = Database()
+    tasks = db.list_tasks(inclide_hashes=True, status=TASK_PENDING)
 
     pending = []
     for task in tasks:
-        pending.append(task.to_dict())
+        pending.append({"target": task.target, "added_on": task.added_on, "category": task.category, "md5": task.sample.md5, "sha256": task.sample.sha256})
 
     return render(request, "analysis/pending.html", {"tasks": pending})
 
@@ -360,7 +383,6 @@ def load_files(request, task_id, category):
     """Filters calls for call category.
     @param task_id: cuckoo task id
     """
-    print(ajax_mongo_schema[category], category, "category")
     #ToDo remove in CAPEv3
     if request.is_ajax() and category in ("CAPE", "CAPE_old", "dropped", "behavior", "debugger"):
         bingraph = False
@@ -369,7 +391,9 @@ def load_files(request, task_id, category):
         # Search calls related to your PID.
         if enabledconf["mongodb"]:
             if category in ("behavior", "debugger"):
-                data = results_db.analysis.find_one({"info.id": int(task_id)}, {"behavior.processes": 1, "behavior.processtree": 1, "info.tlp": 1, "_id": 0})
+                data = results_db.analysis.find_one(
+                    {"info.id": int(task_id)}, {"behavior.processes": 1, "behavior.processtree": 1, "info.tlp": 1, "_id": 0},
+                )
                 if category == "debugger":
                     data["debugger"] = data["behavior"]
             else:
@@ -902,7 +926,8 @@ def search_behavior(request, task_id):
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def report(request, task_id):
     if enabledconf["mongodb"]:
-        report = results_db.analysis.find_one({"info.id": int(task_id)}, {"dropped": 0, "CAPE": 0, "behavior.processes": 0}, sort=[("_id", pymongo.DESCENDING)]
+        report = results_db.analysis.find_one(
+            {"info.id": int(task_id)}, {"dropped": 0, "CAPE": 0, "behavior.processes": 0}, sort=[("_id", pymongo.DESCENDING)],
         )
     if es_as_db:
         query = es.search(index=fullidx, doc_type="analysis", q='info.id: "%s"' % task_id)["hits"]["hits"][0]
@@ -930,7 +955,8 @@ def report(request, task_id):
         children = report["CAPE_children"]
 
     try:
-        report["dropped"] = list(results_db.analysis.aggregate([{"$match": {"info.id": int(task_id)}}, {"$project": {"_id": 0, "dropped_size": {"$size": "$dropped.sha256"}}}]))[0]["dropped_size"]
+        report["dropped"] = list(
+            results_db.analysis.aggregate([{"$match": {"info.id": int(task_id)}}, {"$project": {"_id": 0, "dropped_size": {"$size": "$dropped.sha256"}}}]))[0]["dropped_size"]
     except:
         report["dropped"] = 0
 
@@ -991,53 +1017,14 @@ def report(request, task_id):
         domainlookups = dict()
         iplookups = dict()
 
-    similar = []
-    similarinfo = []
-    if enabledconf["malheur"]:
-        malheur_file = os.path.join(CUCKOO_ROOT, "storage", "malheur", "malheur.txt")
-        if os.path.exists(malheur_file):
-            classes = dict()
-            ourclassname = None
 
-            try:
-                with open(malheur_file, "r") as malfile:
-                    for line in malfile:
-                        if line[0] == "#":
-                            continue
-                        parts = line.strip().split(" ")
-                        classname = parts[1]
-                        if classname != "rejected":
-                            if classname not in classes:
-                                classes[classname] = []
-                            addval = dict()
-                            addval["id"] = parts[0][:-4]
-                            addval["proto"] = parts[2][:-4]
-                            addval["distance"] = parts[3]
-                            if addval["id"] == task_id:
-                                ourclassname = classname
-                            else:
-                                classes[classname].append(addval)
-                if ourclassname:
-                    similar = classes[ourclassname]
-                    for sim in similar[:maxsimilar]:
-                        siminfo = get_analysis_info(db, id=int(sim["id"]))
-                        if siminfo:
-                            similarinfo.append(siminfo)
-                    if similarinfo:
-                        buf = sorted(similarinfo, key=lambda z: z["id"], reverse=True)
-                        similarinfo = buf
-
-            except Exception as e:
-                print(e)
-
-    vba2graph = False
+    vba2graph = processing_cfg.vba2graph.enabled
     vba2graph_svg_content = ""
     vba2graph_svg_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task_id), "vba2graph", "svg", "vba2graph.svg")
     if os.path.exists(vba2graph_svg_path):
-        vba2graph_svg_content = open(vba2graph_svg_path, "rb").read()
-        vba2graph = True
+        vba2graph_svg_content = open(vba2graph_svg_path, "rb").read().decode('utf8')
 
-    bingraph = False
+    bingraph = reporting_cfg.bingraph.enabled
     bingraph_dict_content = {}
     bingraph_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task_id), "bingraph")
     if os.path.exists(bingraph_path):
@@ -1045,8 +1032,6 @@ def report(request, task_id):
             tmp_file = os.path.join(bingraph_path, file)
             with open(tmp_file, "r") as f:
                 bingraph_dict_content.setdefault(os.path.basename(tmp_file).split("-")[0], f.read())
-    if bingraph_dict_content:
-        bingraph = True
 
     return render(
         request,
@@ -1056,7 +1041,6 @@ def report(request, task_id):
             "children": children,
             "domainlookups": domainlookups,
             "iplookups": iplookups,
-            "similar": similarinfo,
             "settings": settings,
             "config": enabledconf,
             "reports_exist": reports_exist,
@@ -1069,17 +1053,22 @@ def report(request, task_id):
 
 def file_nl(request, category, task_id, dlfile):
     file_name = dlfile
+    base_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task_id))
+    path = False
     if category == "screenshot":
         file_name = file_name + ".jpg"
-        path = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "shots", file_name)
+        path = os.path.join(base_path, "shots", file_name)
         cd = "image/jpeg"
 
     elif category == "bingraph":
-        path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(task_id), "bingraph", file_name + "-ent.svg")
+        path = os.path.join(base_path, str(task_id), "bingraph", file_name + "-ent.svg")
         file_name = file_name + "-ent.svg"
         cd = "image/svg+xml"
     else:
         return render(request, "error.html", {"error": "Category not defined"})
+
+    if path and not os.path.normpath(path).startswith(base_path):
+        return render(request, "error.html", {"error": "File not found"})
 
     try:
         resp = StreamingHttpResponse(FileWrapper(open(path, "rb"), 8192), content_type=cd)
@@ -1131,7 +1120,7 @@ def file(request, category, task_id, dlfile):
             if HAVE_PYZIPPER:
                 mem_zip = BytesIO()
                 with pyzipper.AESZipFile(mem_zip, 'w', compression=pyzipper.ZIP_LZMA, encryption=pyzipper.WZ_AES) as zf:
-                    zf.setpassword(b"infected")
+                    zf.setpassword(settings.ZIP_PWD)
                     with open(path, "rb") as f:
                         zf.writestr(os.path.basename(path), f.read())
             else:
@@ -1190,16 +1179,18 @@ def file(request, category, task_id, dlfile):
     try:
         if category in ("samplezip", "droppedzip", "CAPEZIP", "procdumpzip", "memdumpzip"):
             if mem_zip:
-                data = mem_zip.getvalue()
+                mem_zip.seek(0)
+                resp = StreamingHttpResponse(mem_zip, content_type=cd)
+                resp["Content-Length"] = len(mem_zip.getvalue())
         else:
-            data = open(path, "rb").read()
-        size = len(data)
-        #resp = StreamingHttpResponse(FileWrapper(open(path, "rb"), 8192), content_type=cd)
-        resp = HttpResponse(data, content_type=cd)
+            if not os.path.exists(path):
+                 return render(request, "error.html", {"error": "File {} not found".format(os.path.basename(path))})
+            resp = StreamingHttpResponse(FileWrapper(open(path, 'rb'), 8091), content_type=cd)
+            resp["Content-Length"] = os.path.getsize(path)
+        resp["Content-Disposition"] = "attachment; filename={0}".format(os.path.basename(path))
+        return resp
     except Exception as e:
         print(e)
-        if path.endswith(".zip") and os.path.exists(path):
-            os.remove(path)
         return render(request, "error.html", {"error": "File {} not found".format(os.path.basename(path))})
 
     resp["Content-Length"] = size # os.path.getsize(path)
@@ -1211,6 +1202,8 @@ def file(request, category, task_id, dlfile):
 
 @require_safe
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
+@ratelimit(key="ip", rate=my_rate_seconds, block=rateblock)
+@ratelimit(key="ip", rate=my_rate_minutes, block=rateblock)
 def procdump(request, task_id, process_id, start, end):
     origname = process_id + ".dmp"
     tmpdir = None
@@ -1238,19 +1231,24 @@ def procdump(request, task_id, process_id, start, end):
 
     file_name = "{0}_{1:x}.dmp".format(process_id, int(start, 16))
 
-    for proc in analysis.get("procmemory", []) or []:
-        if proc["pid"] == int(process_id):
-            data = b""
-            for memmap in proc["address_space"]:
-                for chunk in memmap["chunks"]:
-                    if int(chunk["start"], 16) >= int(start, 16) and int(chunk["end"], 16) <= int(end, 16):
-                        file_item.seek(chunk["offset"])
-                        data += file_item.read(int(chunk["size"], 16))
-            if len(data):
-                content_type = "application/octet-stream"
-                response = HttpResponse(data, content_type=content_type)
-                response["Content-Disposition"] = "attachment; filename={0}".format(file_name)
-                break
+    if file_item and analysis and "procmemory" in analysis:
+        for proc in analysis["procmemory"]:
+            if proc["pid"] == int(process_id):
+                s = BytesIO()
+                for memmap in proc["address_space"]:
+                    for chunk in memmap["chunks"]:
+                        if int(chunk["start"], 16) >= int(start, 16) and int(chunk["end"], 16) <= int(end, 16):
+                            file_item.seek(chunk["offset"])
+                            s.write(file_item.read(int(chunk["size"], 16)))
+                s.seek(0)
+                size = s.getvalue()
+                if size:
+                    content_type = "application/octet-stream"
+                    response = StreamingHttpResponse(s, content_type=content_type)
+                    response["Content-Length"] = size
+                    response["Content-Disposition"] = "attachment; filename={0}".format(file_name)
+                    break
+
 
     if file_item:
         file_item.close()
@@ -1311,6 +1309,8 @@ def filereport(request, task_id, category):
 
 
 @require_safe
+@ratelimit(key="ip", rate=my_rate_seconds, block=rateblock)
+@ratelimit(key="ip", rate=my_rate_minutes, block=rateblock)
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def full_memory_dump_file(request, analysis_number):
     file_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(analysis_number), "memory.dmp")
@@ -1341,6 +1341,8 @@ def full_memory_dump_file(request, analysis_number):
 
 
 @require_safe
+@ratelimit(key="ip", rate=my_rate_seconds, block=rateblock)
+@ratelimit(key="ip", rate=my_rate_minutes, block=rateblock)
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def full_memory_dump_strings(request, analysis_number):
     file_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(analysis_number), "memory.dmp.strings")
@@ -1362,6 +1364,8 @@ def full_memory_dump_strings(request, analysis_number):
 
 
 @csrf_exempt
+@ratelimit(key="ip", rate=my_rate_seconds, block=rateblock)
+@ratelimit(key="ip", rate=my_rate_minutes, block=rateblock)
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def search(request):
     if "search" in request.POST:
@@ -1375,11 +1379,7 @@ def search(request):
 
         # Check on search size. But malscore can be a single digit number.
         if term != "malscore" and len(value) < 3:
-            return render(
-                request,
-                "analysis/search.html",
-                {"analyses": None, "term": request.POST["search"], "error": "Search term too short, minimum 3 characters required"},
-            )
+            return render(request, "analysis/search.html", {"analyses": None, "term": request.POST["search"], "error": "Search term too short, minimum 3 characters required"},)
 
         # name:foo or name: foo
         value = value.lstrip()
@@ -1396,6 +1396,12 @@ def search(request):
             elif re.match(r"^([a-fA-F\d]{128})$", value):
                 term = "sha512"
 
+        if term == "ids":
+            if all([v.strip().isdigit() for v in value.split(",")]):
+                value = [int(v.strip()) for v in filter(None, value.split(","))]
+            else:
+                return render(request, "analysis/search.html", {"analyses": None, "term": request.POST["search"], "error": "Not all values are integers"})
+
         try:
             if term == "malscore":
                 records = perform_malscore_search(value)
@@ -1405,15 +1411,9 @@ def search(request):
                 records = perform_search(term, value)
         except ValueError:
             if term:
-                return render(
-                    request,
-                    "analysis/search.html",
-                    {"analyses": None, "term": request.POST["search"], "error": "Invalid search term: %s" % term},
-                )
+                return render( request, "analysis/search.html", {"analyses": None, "term": request.POST["search"], "error": "Invalid search term: %s" % term},)
             else:
-                return render(
-                    request, "analysis/search.html", {"analyses": None, "term": None, "error": "Unable to recognize the search syntax"}
-                )
+                return render(request, "analysis/search.html", {"analyses": None, "term": None, "error": "Unable to recognize the search syntax"})
 
         analyses = []
         for result in records or []:
@@ -1554,6 +1554,8 @@ def pcapstream(request, task_id, conntuple):
     return HttpResponse(json.dumps(packets), content_type="application/json")
 
 
+@ratelimit(key="ip", rate=my_rate_seconds, block=rateblock)
+@ratelimit(key="ip", rate=my_rate_minutes, block=rateblock)
 @conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
 def comments(request, task_id):
     if request.method == "POST" and settings.COMMENTS:
@@ -1604,16 +1606,103 @@ def vtupload(request, category, task_id, filename, dlfile):
                 path = os.path.join(CUCKOO_ROOT, "storage", "binaries", dlfile)
             elif category == "dropped":
                 path = os.path.join(CUCKOO_ROOT, "storage", "analyses", task_id, "files", filename)
-            params = {"apikey": settings.VTDL_PRIV_KEY}
+            params = {"x-apikey": settings.VTDL_PRIV_KEY}
             files = {"file": (filename, open(path, "rb"))}
-            response = requests.post("https://www.virustotal.com/vtapi/v2/file/scan", files=files, params=params)
-            response_code = response.json()["response_code"]
-            permalink = response.json()["permalink"]
-            if response_code == 1:
-                return render(request, "success_vtup.html", {"permalink": permalink})
-            else:
-                return render(request, "error.html", {"error": "Response code: {}".format(response.json())})
+            response = requests.post("https://www.virustotal.com/api/v3/files", files=files, params=params)
+            if response.ok:
+                data = response.json().get("data", {})
+                id = data.get("id")
+                if id:
+                    return render(request, "success_vtup.html", {"permalink": "https://www.virustotal.com/api/v3/analyses/{id}".format(id=id)})
+                else:
+                    return render(request, "error.html", {"error": "Response code: {}".format(response.json())})
         except Exception as err:
             return render(request, "error.html", {"error": err})
     else:
         return
+
+@conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
+def statistics_data(request, days=7):
+    if days.isdigit():
+        details = statistics(int(days))
+        return render(request, "statistics.html", {"statistics": details, "days": days})
+    else:
+        return render(request, "error.html", {"error": "Provide days as number"})
+
+on_demand_config_mapper = {
+    "bingraph": reporting_cfg,
+    "flare_capa": processing_cfg,
+    "vba2graph": processing_cfg,
+}
+
+@conditional_login_required(login_required, settings.WEB_AUTHENTICATION)
+def on_demand(request, service: str, task_id: int, category: str, sha256):
+    """
+        This aux function allows to generate some details on demand, this is specially useful for long running libraries and we don't need them in many cases due to scripted submissions
+        @param service: Service for which we want to generate details
+        @param task_id: ID of analysis
+        @param category: Example: CAPE, procdump, etc
+        @param sha256: file hash for which we want to generate details
+        @return: redirect to the same webpage but with missed details included
+
+        # 0. ensure that we not generating this data or data exist
+        # 1. get file path
+        # 2. call to func
+        # 3. store results
+        # 4. reload page
+    """
+
+    if service not in ("bingraph", "flare_capa", "vba2graph") and not on_demand_config_mapper.get(service, {}).get(service, {}).get("on_demand"):
+        return render(request, "error.html", {"error": "Not supported/enabled service on demand"})
+
+    if category == "static":
+        path = os.path.join(ANALYSIS_BASE_PATH, str(task_id), "binary")
+    else:
+        path = os.path.join(ANALYSIS_BASE_PATH, str(task_id), category, sha256)
+
+    if path and (not os.path.normpath(path).startswith(ANALYSIS_BASE_PATH) or not os.path.exists(path)):
+        return render(request, "error.html", {"error": "File not found: {}".format(path)})
+
+    details = False
+    if service == "flare_capa" and HAVE_FLARE_CAPA:
+        details = flare_capa_details(path, category.lower(), on_demand=True)
+
+    elif service == "vba2graph" and HAVE_VBA2GRAPH:
+        vba2graph_func(path, str(task_id), on_demand=True)
+
+    elif service == "bingraph" and HAVE_BINGRAPH and reporting_cfg.bingraph.enabled and reporting_cfg.bingraph.on_demand and not os.path.exists(os.path.join(ANALYSIS_BASE_PATH, str(task_id), "bingraph", sha256+"-ent.svg")):
+        bingraph_path = os.path.join(ANALYSIS_BASE_PATH, str(task_id), "bingraph")
+        if not os.path.exists(bingraph_path):
+            os.makedirs(bingraph_path)
+        try:
+            bingraph_args_dict.update({"prefix": sha256, "files": [path], "save_dir": bingraph_path})
+            try:
+                bingraph_gen(bingraph_args_dict)
+            except Exception as e:
+                print("Can't generate bingraph for {}: {}".format(sha256, e))
+        except Exception as e:
+            print("Bingraph on demand error:", e)
+
+    if details:
+        buf = results_db.analysis.find_one({"info.id": int(task_id)}, {"_id": 1, category: 1})
+        if category == "CAPE":
+            for block in buf[category].get("payloads", []) or []:
+                if block.get("sha256") == sha256:
+                    block[service] = details
+                    break
+
+        elif category == "static":
+            if buf.get(category, {}):
+                buf["static"][service] = details
+
+        elif category == "procdump":
+            for block in buf[category] or []:
+                if block.get("sha256") == sha256:
+                    block[service] = details
+                    break
+
+        results_db.analysis.update({"_id": ObjectId(buf["_id"])}, {"$set": {category: buf[category]}})
+        del details
+
+    return redirect("report", task_id=task_id)
+

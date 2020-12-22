@@ -36,7 +36,11 @@ class ProcessMemory(Processing):
             with open(path, "wb") as f:
                 f.write(data)
 
-            res.append(File(path).get_all())
+            data, pefile_object = File(path).get_all()
+            if pefile_object:
+                self.results.setdefault("pefiles", {})
+                self.results["pefiles"].setdefault(data["sha256"], pefile_object)
+            res.append(data)
         return res
 
     def get_yara_memblock(self, addr_space, yaraoffset):
@@ -101,7 +105,7 @@ class ProcessMemory(Processing):
                         memblock = self.get_yara_memblock(proc["address_space"], hit["addresses"][item])
                         if memblock:
                             hit["memblocks"][item] = memblock
-                
+
                 # if self.options.get("extract_pe", False)
                 extracted_pes = self.get_procmemory_pe(proc)
 

@@ -1,3 +1,23 @@
+### [22.12.2020] Peque edition
+* TLS decrypt integration, huge thanks to Hatching team to release their code. WEBGUI integration isn't finished yet, but you already can see https requests there
+
+### [08.12.2020] On demand
+* Add uniq submission limitation, can be enabled in `conf/web.conf` to disable the same submission during X hours
+* Bingraph, FLARE CAPA, vba2graph on demand
+* Added `on_demand` feature.
+    * This funcions aim to speedup processing but allow to user to generate parts of analysis that takes some time to finish and not used frequently. Example scripted submissions
+
+### [02.12.2020] CAPE 2.2
+* Malduck integration
+* Bootrstarp 4.5.3 & font awesome 5
+* Statistics
+* Tag_tasks - allows you tag your jobs
+* self.pefiles: introduced to prcessing/signatures modules, you can get PEFILE object by sha256 self.pefiles.get(sha256)
+* Pending page now is much useful and show hashes to easilly spot duplicated
+* Submission of file or resubmission will show all the jobs and detection for that file
+* [Flare capa](https://github.com/fireeye/capa) integrated under static tab for original binary, procdump and cape (should be enabled in processing.conf), Rules can be pulled from community, but we will leave it community driven to sync them. So you can copy them from https://github.com/fireeye/capa-rules and place under `data/flare-capa`
+* More soon ;)
+
 ### 16-11-2020
 * `utils/cleaners.py` option `--delete-older-than-days` moved to bulk remove 10 in 10, to improve performance and decrease IO
 

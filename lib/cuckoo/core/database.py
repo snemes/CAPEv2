@@ -4,6 +4,7 @@
 
 from __future__ import absolute_import
 import os
+import sys
 import json
 import logging
 from datetime import datetime, timedelta
@@ -44,7 +45,7 @@ results_db = pymongo.MongoClient(
     authSource=repconf.mongodb.db,
 )[repconf.mongodb.db]
 
-SCHEMA_VERSION = "2996ec5ea15c"
+SCHEMA_VERSION = "c554ed5f32a0"
 TASK_PENDING = "pending"
 TASK_RUNNING = "running"
 TASK_DISTRIBUTED = "distributed"
@@ -277,11 +278,16 @@ class Task(Base):
     id = Column(Integer(), primary_key=True)
     target = Column(Text(), nullable=False)
     category = Column(String(255), nullable=False)
+    cape = Column(String(2048), nullable=True)
     timeout = Column(Integer(), server_default="0", nullable=False)
     priority = Column(Integer(), server_default="1", nullable=False)
     custom = Column(String(255), nullable=True)
     machine = Column(String(255), nullable=True)
     package = Column(String(255), nullable=True)
+    route = Column(String(128), nullable=True, default=False)
+    # Task tags
+    tags_tasks = Column(String(256), nullable=True)
+    # Virtual machine tags
     tags = relationship("Tag", secondary=tasks_tags, backref="tasks", lazy="subquery")
     options = Column(String(1024), nullable=True)
     platform = Column(String(255), nullable=True)
@@ -331,7 +337,7 @@ class Task(Base):
     timedout = Column(Boolean, nullable=False, default=False)
 
     sample_id = Column(Integer, ForeignKey("samples.id"), nullable=True)
-    sample = relationship("Sample", backref="tasks")
+    sample = relationship("Sample", backref="tasks", lazy="subquery")
     machine_id = Column(Integer, nullable=True)
     guest = relationship("Guest", uselist=False, backref="tasks", cascade="save-update, delete")
     errors = relationship("Error", backref="tasks", cascade="save-update, delete")
@@ -465,11 +471,9 @@ class Database(object, metaclass=Singleton):
             last = tmp_session.query(AlembicVersion).first()
             tmp_session.close()
             if last.version_num != SCHEMA_VERSION and schema_check:
-                raise CuckooDatabaseError(
-                    "DB schema version mismatch: found {0}, expected {1}. "
-                    "Try to apply all migrations (cd utils/db_migration/ && "
-                    "alembic upgrade head).".format(last.version_num, SCHEMA_VERSION)
-                )
+                print("DB schema version mismatch: found {0}, expected {1}. Try to apply all migrations".format(last.version_num, SCHEMA_VERSION))
+                print(red("cd utils/db_migration/ && alembic upgrade head"))
+                sys.exit()
 
     def __del__(self):
         """Disconnects pool."""
@@ -1082,6 +1086,10 @@ class Database(object, metaclass=Singleton):
         tlp=None,
         static=False,
         source_url=False,
+        route = None,
+        cape = False,
+        tags_tasks = False,
+
     ):
         """Add a task to database.
         @param obj: object to add (File or URL).
@@ -1100,6 +1108,9 @@ class Database(object, metaclass=Singleton):
         @param static: try static extraction first
         @param tlp: TLP sharing designation
         @param source_url: url from where it was downloaded
+        @param route: Routing route
+        @param cape: CAPE options
+        @param tags_tasks: Task tags so users can tag their jobs
         @return: cursor or None.
         """
         session = self.Session()
@@ -1178,6 +1189,9 @@ class Database(object, metaclass=Singleton):
         task.shrike_refer = shrike_refer
         task.parent_id = parent_id
         task.tlp = tlp
+        task.route = route
+        task.cape = cape
+        task.tags_tasks = tags_tasks
         # Deal with tags format (i.e., foo,bar,baz)
         if tags:
             for tag in tags.replace(" ", "").split(","):
@@ -1233,6 +1247,9 @@ class Database(object, metaclass=Singleton):
         tlp=None,
         static=False,
         source_url=False,
+        route=None,
+        cape=False,
+        tags_tasks=False,
     ):
         """Add a task to database from file path.
         @param file_path: sample path.
@@ -1250,6 +1267,9 @@ class Database(object, metaclass=Singleton):
         @param sample_parent_id: sample parent id, if archive
         @param static: try static extraction first
         @param tlp: TLP sharing designation
+        @param route: Routing route
+        @param cape: CAPE options
+        @param tags_tasks: Task tags so users can tag their jobs
         @return: cursor or None.
         """
         if not file_path or not os.path.exists(file_path):
@@ -1283,6 +1303,9 @@ class Database(object, metaclass=Singleton):
             sample_parent_id,
             tlp,
             source_url=source_url,
+            route=route,
+            cape=cape,
+            tags_tasks=tags_tasks,
         )
 
     def demux_sample_and_add_to_db(
@@ -1309,6 +1332,9 @@ class Database(object, metaclass=Singleton):
         static=False,
         source_url=False,
         only_extraction=False,
+        tags_tasks=False,
+        route=None,
+        cape=False,
     ):
         """
         Handles ZIP file submissions, submitting each extracted file to the database
@@ -1375,6 +1401,9 @@ class Database(object, metaclass=Singleton):
                     sample_parent_id=sample_parent_id,
                     tlp=tlp,
                     source_url=source_url,
+                    route=route,
+                    tags_tasks=tags_tasks,
+                    cape=cape,
                 )
             if task_id:
                 task_ids.append(task_id)
@@ -1494,6 +1523,9 @@ class Database(object, metaclass=Singleton):
         shrike_refer=None,
         parent_id=None,
         tlp=None,
+        route=None,
+        cape=False,
+        tags_tasks=False
     ):
         """Add a task to database from url.
         @param url: url.
@@ -1536,6 +1568,9 @@ class Database(object, metaclass=Singleton):
             shrike_refer,
             parent_id,
             tlp,
+            route = route,
+            cape = cape,
+            tags_tasks = tags_tasks,
         )
 
     @classlock
@@ -1620,11 +1655,25 @@ class Database(object, metaclass=Singleton):
             session.close()
 
     @classlock
-    def check_file_uniq(self, sha256):
-        if not Database.find_sample(self, sha256=sha256):
-            return False
-        else:
-            return True
+    def check_file_uniq(self, sha256: str, hours: int=0):
+        uniq = False
+        session = self.Session()
+        try:
+            if hours and sha256:
+                date_since = datetime.now()-timedelta(hours=hours)
+                date_till = datetime.now()
+                uniq = session.query(Task).join(Sample, Task.sample_id==Sample.id).filter(Sample.sha256==sha256, Task.added_on.between(date_since, date_till)).first()
+            else:
+                if not Database.find_sample(self, sha256=sha256):
+                    uniq = False
+                else:
+                    uniq = True
+        except SQLAlchemyError as e:
+            log.debug("Database error counting tasks: {0}".format(e))
+        finally:
+            session.close()
+
+        return uniq
 
     @classlock
     def list_parents(self, parent_id):
@@ -1693,7 +1742,9 @@ class Database(object, metaclass=Singleton):
         id_before=None,
         id_after=None,
         options_like=False,
+        tags_tasks_like=False,
         task_ids=False,
+        inclide_hashes=False,
     ):
         """Retrieve list of task.
         @param limit: specify a limit of entries.
@@ -1709,23 +1760,26 @@ class Database(object, metaclass=Singleton):
         @param id_before: filter by tasks which is less than this value
         @param id_after filter by tasks which is greater than this value
         @param options_like: filter tasks by specific option insde of the options
+        @param tags_tasks_like: filter tasks by specific tag
         @param task_ids: list of task_id
+        @param inclide_hashes: return task+samples details
         @return: list of tasks.
         """
         session = self.Session()
         try:
             search = session.query(Task)
-
+            if inclide_hashes:
+                search = search.join(Sample, Task.sample_id==Sample.id)
             if status:
-                search = search.filter_by(status=status)
+                search = search.filter(Task.status==status)
             if not_status:
                 search = search.filter(Task.status != not_status)
             if category:
-                search = search.filter_by(category=category)
+                search = search.filter(Task.category==category)
             if details:
                 search = search.options(joinedload("guest"), joinedload("errors"), joinedload("tags"))
             if sample_id is not None:
-                search = search.filter_by(sample_id=sample_id)
+                search = search.filter(Task.sample_id==sample_id)
             if id_before is not None:
                 search = search.filter(Task.id < id_before)
             if id_after is not None:
@@ -1736,14 +1790,16 @@ class Database(object, metaclass=Singleton):
                 search = search.filter(Task.added_on < added_before)
             if options_like:
                 search = search.filter(Task.options.like("%{}%".format(options_like)))
+            if tags_tasks_like:
+                search = search.filter(Task.tags_tasks.like("%{}%".format(tags_tasks_like)))
             if task_ids:
                 search = search.filter(Task.id.in_(task_ids))
             if order_by is not None:
                 search = search.order_by(order_by)
             else:
                 search = search.order_by(Task.added_on.desc())
-            tasks = search.limit(limit).offset(offset).all()
-            return tasks
+
+            return search.limit(limit).offset(offset).all()
         except SQLAlchemyError as e:
             log.debug("Database error listing tasks: {0}".format(e))
             return []
@@ -1910,6 +1966,7 @@ class Database(object, metaclass=Singleton):
         @param parent: sample_id int
         @return: matches list
         """
+        sample = False
         session = self.Session()
         try:
             if md5:

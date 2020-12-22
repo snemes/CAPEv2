@@ -82,7 +82,7 @@ from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.objects import File, IsPEImage
 from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.objects import File
-
+from lib.cuckoo.common.cape_utils import vba2graph_func
 import lib.cuckoo.common.office.vbadeobf as vbadeobf
 
 try:
@@ -112,6 +112,7 @@ except ImportError:
 
 from lib.cuckoo.common.utils import convert_to_printable
 from lib.cuckoo.common.pdftools.pdfid import PDFiD, PDFiD2JSON
+from lib.cuckoo.common.cape_utils import flare_capa_details
 
 try:
     from peepdf.PDFCore import PDFParser
@@ -348,9 +349,21 @@ class PortableExecutable(object):
         self.results = results
 
     def add_statistic(self, name, field, value):
-        self.results["statistics"]["processing"].append(
-            {"name": name, field: value,}
-        )
+        self.results["statistics"]["processing"].append({"name": name, field: value})
+
+    def add_statistic_tmp(self, name, field, pretime):
+        posttime = datetime.now()
+        timediff = posttime - pretime
+        value = float("%d.%03d" % (timediff.seconds, timediff.microseconds / 1000))
+
+        if name not in self.results["temp_processing_stats"]:
+            self.results["temp_processing_stats"][name] = {}
+
+        # To be able to add yara/capa and others time summary over all processing modules
+        if field in self.results["temp_processing_stats"][name]:
+           self.results["temp_processing_stats"][name][field] += value
+        else:
+           self.results["temp_processing_stats"][name][field] = value
 
     def _get_peid_signatures(self):
         """Gets PEID signatures.
@@ -948,9 +961,9 @@ class PortableExecutable(object):
 
         pretime = datetime.now()
         peresults["peid_signatures"] = self._get_peid_signatures()
-        posttime = datetime.now()
-        timediff = posttime - pretime
-        self.add_statistic("peid", "time", float("%d.%03d" % (timediff.seconds, timediff.microseconds / 1000)))
+        timediff = datetime.now() - pretime
+        value = float("%d.%03d" % (timediff.seconds, timediff.microseconds / 1000))
+        self.add_statistic("peid", "time", value)
 
         peresults["imagebase"] = self._get_imagebase()
         peresults["entrypoint"] = self._get_entrypoint()
@@ -973,6 +986,12 @@ class PortableExecutable(object):
         peresults["guest_signers"] = self._get_guest_digital_signers()
         if peresults.get("imports", False):
             peresults["imported_dll_count"] = len([x for x in peresults["imports"] if x.get("dll")])
+
+        pretime = datetime.now()
+        capa_details = flare_capa_details(self.file_path, "static")
+        if capa_details:
+            results["flare_capa"] = capa_details
+        self.add_statistic_tmp("flare_capa", "time", pretime)
 
         return results
 
@@ -1427,16 +1446,8 @@ class Office(object):
             if macrores["Analysis"]["HexStrings"] == []:
                 del macrores["Analysis"]["HexStrings"]
 
-            if HAVE_VBA2GRAPH and processing_conf.vba2graph.enabled:
-                try:
-                    vba2graph_path = os.path.join(CUCKOO_ROOT, "storage", "analyses", str(self.results["info"]["id"]), "vba2graph")
-                    if not os.path.exists(vba2graph_path):
-                        os.makedirs(vba2graph_path)
-                    vba_code = vba2graph_from_vba_object(filepath)
-                    if vba_code:
-                        vba2graph_gen(vba_code, vba2graph_path)
-                except Exception as e:
-                    log.exception(e)
+            vba2graph_func(filepath, str(self.results["info"]["id"]))
+
         else:
             metares["HasMacros"] = "No"
 
@@ -1478,7 +1489,10 @@ class Office(object):
                     xlmmacro["info"]["yara_macro"] = File(macro_file).get_yara(category="macro")
                     xlmmacro["info"]["yara_macro"].extend(File(macro_file).get_yara(category="CAPE"))
             except Exception as e:
-                log.exception(e)
+                if "no attribute 'workbook'" in str(e) or "Can't find workbook" in str(e):
+                    log.info("Workbook not found. Probably not an Excel file.")
+                else:
+                    log.exception(e)
 
         return results
 
@@ -2543,7 +2557,7 @@ class EncodedScriptFile(object):
 
             o = o + 1
 
-        if (c % 2 ** 32) != struct.unpack("I", source[o : o + 8].decode("base64"))[0]:
+        if (c % 2 ** 32) != base64.b64decode(struct.unpack("I", source[o : o + 8]))[0]:
             log.info("Invalid checksum for Encoded WSF file!")
 
         return "".join(chr(ch) for ch in r)

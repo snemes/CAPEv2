@@ -12,6 +12,8 @@ import logging
 import argparse
 import signal
 import multiprocessing
+import platform
+import resource
 
 if sys.version_info[:2] < (3, 6):
     sys.exit("You are running an incompatible version of Python, please use >= 3.6")
@@ -51,6 +53,23 @@ if repconf.elasticsearchdb.enabled and not repconf.elasticsearchdb.searchonly:
 pending_future_map = {}
 pending_task_id_map = {}
 
+# https://stackoverflow.com/questions/41105733/limit-ram-usage-to-python-program
+def memory_limit(percentage: float = 0.8):
+    if platform.system() != "Linux":
+        print('Only works on linux!')
+        return
+    _, hard = resource.getrlimit(resource.RLIMIT_AS)
+    resource.setrlimit(resource.RLIMIT_AS, (get_memory() * 1024 * percentage, hard))
+
+def get_memory():
+    with open('/proc/meminfo', 'r') as mem:
+        free_memory = 0
+        for i in mem:
+            sline = i.split()
+            if str(sline[0]) == 'MemAvailable:':
+                free_memory = int(sline[1])
+                break
+    return free_memory
 
 def process(target=None, copy_path=None, task=None, report=False, auto=False, capeproc=False, memory_debugging=False):
     # This is the results container. It's what will be used by all the
@@ -191,7 +210,6 @@ def processing_finished(future):
     del pending_future_map[future]
     del pending_task_id_map[task_id]
 
-
 def autoprocess(parallel=1, failed_processing=False, maxtasksperchild=7, memory_debugging=False, processing_timeout=300):
     maxcount = cfg.cuckoo.max_analysis_count
     count = 0
@@ -199,6 +217,7 @@ def autoprocess(parallel=1, failed_processing=False, maxtasksperchild=7, memory_
     # pool = multiprocessing.Pool(parallel, init_worker)
 
     try:
+        memory_limit()
         log.info("Processing analysis data")
         # CAUTION - big ugly loop ahead.
         while count < maxcount or not maxcount:
@@ -254,14 +273,17 @@ def autoprocess(parallel=1, failed_processing=False, maxtasksperchild=7, memory_
         # ToDo verify in finally
         # pool.terminate()
         raise
-    except:
+    except MemoryError:
+        mem = get_memory() / 1024 /1024
+        print('Remain: %.2f GB' % mem)
+        sys.stderr.write('\n\nERROR: Memory Exception\n')
+        sys.exit(1)
+    except Exception as e:
         import traceback
-
         traceback.print_exc()
     finally:
         pool.close()
         pool.join()
-
 
 def main():
     parser = argparse.ArgumentParser()
