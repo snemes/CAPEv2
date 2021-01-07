@@ -183,6 +183,8 @@ def my_rate_seconds(group, request):
             password = request.GET.get("password", "")
         if username and password and HAVE_PASSLIB and ht and ht.check_password(username, password):
             return None
+        elif apilimiter[group].get("auth_only"):
+            return "0/s"
         else:
             return apilimiter[group].get("rps")
 
@@ -208,6 +210,8 @@ def my_rate_minutes(group, request):
 
         if username and password and HAVE_PASSLIB and ht and ht.check_password(username, password):
             return None
+        elif apilimiter[group].get("auth_only"):
+            return "0/m"
         else:
             return apilimiter[group].get("rpm")
 
@@ -243,12 +247,23 @@ def statistics(s_days: int) -> dict:
         "processing": {},
         "reporting": {},
         "top_samples": {},
+        "detections": {},
     }
 
     tmp_data = dict()
     results_db = pymongo.MongoClient(repconf.mongodb.host, repconf.mongodb.port)[repconf.mongodb.db]
-    data = results_db.analysis.find({"statistics":{"$exists":True}, "info.started": {"$gte": date_since.isoformat()}}, {"statistics": 1, "_id": 0})
+    data = results_db.analysis.find({"statistics":{"$exists":True}, "info.started": {"$gte": date_since.isoformat()}}, {"statistics": 1, "malfamily": 1, "detections":1, "_id": 0})
     for analysis in data or []:
+
+        malfamily = False
+        if "detections" in analysis:
+            malfamily = analysis["detections"]
+        elif "malfamily" in analysis:
+            malfamily = analysis["malfamily"]
+        if malfamily:
+            details["detections"].setdefault(malfamily, 0)
+            details["detections"][malfamily] += 1
+
         for type_entry in analysis.get("statistics", []) or []:
             if type_entry not in tmp_data:
                 tmp_data.setdefault(type_entry, dict())
@@ -330,6 +345,10 @@ def statistics(s_days: int) -> dict:
 
         details["top_samples"][day] = OrderedDict(sorted(details["top_samples"][day].items(), key=lambda x: x[1], reverse=True))
     details["top_samples"] = OrderedDict(sorted(details["top_samples"].items(), key=lambda x: datetime.strptime(x[0], "%Y-%m-%d"), reverse=True))
+
+    # top 15 detections
+    details["detections"] = OrderedDict(sorted(details["detections"].items(), key=lambda x: x[1], reverse=True)[:20])
+
     session.close()
     return details
 
@@ -431,6 +450,11 @@ def download_file(**kwargs):
             clock, enforce_timeout, shrike_url, shrike_msg, shrike_sid, shrike_refer, unique, referrer, \
             tlp, tags_tasks, route, cape = parse_request_arguments(kwargs["request"])
     onesuccess = False
+
+    """
+    if package:
+        # Reject jobs with bad packages
+    """
     if tags:
         if not all([tag.strip() in all_vms_tags for tag in tags.split(",")]):
             return "error", {"error": "Check Tags help, you have introduced incorrect tag(s)"}
@@ -471,7 +495,7 @@ def download_file(**kwargs):
         return "error", {"error": "Error writing {} storing/download file to temporary path".format(kwargs["service"])}
 
     onesuccess = True
-    magic_type = get_magic_type(kwargs["content"])
+    magic_type = get_magic_type(kwargs["path"])
     if disable_x64 is True and kwargs["path"] and magic_type and ("x86-64" in magic_type or "PE32+" in magic_type):
         if len(kwargs["request"].FILES) == 1:
             return "error", {"error": "Sorry no x64 support yet"}
@@ -777,6 +801,10 @@ def download_from_vt(vtdl, details, opt_filename, settings):
         else:
             filename = base_dir + "/" + sanitize_filename(h)
         paths = db.sample_path_by_hash(h)
+
+        # clean old content
+        if "content" in details:
+            del details["content"]
 
         if paths:
             details["content"] = get_file_content(paths)

@@ -96,12 +96,7 @@ except ImportError:
 try:
     from oletools import oleobj
     from oletools.oleid import OleID
-    from oletools.olevba import detect_autoexec
-    from oletools.olevba import detect_hex_strings
-    from oletools.olevba import detect_patterns
-    from oletools.olevba import detect_suspicious
-    from oletools.olevba import filter_vba
-    from oletools.olevba import VBA_Parser
+    from oletools.olevba import detect_autoexec, detect_hex_strings, detect_patterns, detect_suspicious, filter_vba, VBA_Parser, UnexpectedDataError
     from oletools.rtfobj import is_rtf, RtfObjParser
     from oletools.msodde import process_file as extract_dde
 
@@ -375,7 +370,7 @@ class PortableExecutable(object):
         try:
             result = userdb_signatures.match_all(self.pe, ep_only=True)
             if result:
-                return result
+                return list(set(result))
         except Exception as e:
             log.exception(e)
 
@@ -732,7 +727,12 @@ class PortableExecutable(object):
                         bigidx = icon.nID
                         iconidx = idx
 
-            rt_icon_idx = [entry.id for entry in self.pe.DIRECTORY_ENTRY_RESOURCE.entries].index(pefile.RESOURCE_TYPE["RT_ICON"])
+            rt_icon_idx = False
+            rt_icon_idx_tmp = [entry.id for entry in self.pe.DIRECTORY_ENTRY_RESOURCE.entries]
+            if pefile.RESOURCE_TYPE["RT_ICON"] in rt_icon_idx_tmp:
+                rt_icon_idx = rt_icon_idx_tmp.index(pefile.RESOURCE_TYPE["RT_ICON"])
+            if not rt_icon_idx:
+                return None, None, None
             rt_icon_dir = self.pe.DIRECTORY_ENTRY_RESOURCE.entries[rt_icon_idx]
             for entry in rt_icon_dir.directory.entries:
                 if entry.id == bigidx:
@@ -897,8 +897,11 @@ class PortableExecutable(object):
                 "not_before": cert.not_valid_before.isoformat(),
                 "not_after": cert.not_valid_after.isoformat(),
             }
-            for attribute in cert.subject:
-                cert_data["subject_{}".format(attribute.oid._name)] = attribute.value
+            try:
+                for attribute in cert.subject:
+                    cert_data["subject_{}".format(attribute.oid._name)] = attribute.value
+            except ValueError as e:
+                log.warning(e)
             for attribute in cert.issuer:
                 cert_data["issuer_{}".format(attribute.oid._name)] = attribute.value
             try:
@@ -1397,43 +1400,47 @@ class Office(object):
             macrores["Analysis"]["Suspicious"] = list()
             macrores["Analysis"]["IOCs"] = list()
             macrores["Analysis"]["HexStrings"] = list()
-            for (_, _, vba_filename, vba_code) in vba.extract_macros():
-                vba_code = filter_vba(vba_code)
-                if vba_code.strip() != "":
-                    # Handle all macros
-                    ctr += 1
-                    outputname = "Macro" + str(ctr)
-                    macrores["Code"][outputname] = list()
-                    macrores["Code"][outputname].append((convert_to_printable(vba_filename), convert_to_printable(vba_code)))
-                    autoexec = detect_autoexec(vba_code)
-                    if not os.path.exists(macro_folder):
-                        os.makedirs(macro_folder)
-                    macro_file = os.path.join(macro_folder, outputname)
-                    with open(macro_file, "w") as f:
-                        f.write(convert_to_printable(vba_code))
-                    macrores["info"][outputname] = dict()
-                    macrores["info"][outputname]["yara_macro"] = File(macro_file).get_yara(category="macro")
-                    macrores["info"][outputname]["yara_macro"].extend(File(macro_file).get_yara(category="CAPE"))
 
-                    suspicious = detect_suspicious(vba_code)
-                    iocs = False
-                    try:
-                        iocs = vbadeobf.parse_macro(vba_code)
-                    except Exception as e:
-                        log.exception(e)
-                    hex_strs = detect_hex_strings(vba_code)
-                    if autoexec:
-                        for keyword, description in autoexec:
-                            macrores["Analysis"]["AutoExec"].append((keyword.replace(".", "_"), description))
-                    if suspicious:
-                        for keyword, description in suspicious:
-                            macrores["Analysis"]["Suspicious"].append((keyword.replace(".", "_"), description))
-                    if iocs:
-                        for pattern, match in iocs:
-                            macrores["Analysis"]["IOCs"].append((pattern, match))
-                    if hex_strs:
-                        for encoded, decoded in hex_strs:
-                            macrores["Analysis"]["HexStrings"].append((encoded, convert_to_printable(decoded)))
+            try:
+                for (_, _, vba_filename, vba_code) in vba.extract_macros():
+                    vba_code = filter_vba(vba_code)
+                    if vba_code.strip() != "":
+                        # Handle all macros
+                        ctr += 1
+                        outputname = "Macro" + str(ctr)
+                        macrores["Code"][outputname] = list()
+                        macrores["Code"][outputname].append((convert_to_printable(vba_filename), convert_to_printable(vba_code)))
+                        autoexec = detect_autoexec(vba_code)
+                        if not os.path.exists(macro_folder):
+                            os.makedirs(macro_folder)
+                        macro_file = os.path.join(macro_folder, outputname)
+                        with open(macro_file, "w") as f:
+                            f.write(convert_to_printable(vba_code))
+                        macrores["info"][outputname] = dict()
+                        macrores["info"][outputname]["yara_macro"] = File(macro_file).get_yara(category="macro")
+                        macrores["info"][outputname]["yara_macro"].extend(File(macro_file).get_yara(category="CAPE"))
+
+                        suspicious = detect_suspicious(vba_code)
+                        iocs = False
+                        try:
+                            iocs = vbadeobf.parse_macro(vba_code)
+                        except Exception as e:
+                            log.error(e, exc_info=True)
+                        hex_strs = detect_hex_strings(vba_code)
+                        if autoexec:
+                            for keyword, description in autoexec:
+                                macrores["Analysis"]["AutoExec"].append((keyword.replace(".", "_"), description))
+                        if suspicious:
+                            for keyword, description in suspicious:
+                                macrores["Analysis"]["Suspicious"].append((keyword.replace(".", "_"), description))
+                        if iocs:
+                            for pattern, match in iocs:
+                                macrores["Analysis"]["IOCs"].append((pattern, match))
+                        if hex_strs:
+                            for encoded, decoded in hex_strs:
+                                macrores["Analysis"]["HexStrings"].append((encoded, convert_to_printable(decoded)))
+            except (AssertionError, UnexpectedDataError) as e:
+                log.warning(("Macros in static.py", e))
 
             # Delete and keys which had no results. Otherwise we pollute the
             # Django interface with null data.

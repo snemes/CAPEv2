@@ -782,7 +782,7 @@ class Signature(object):
             for sub_keyword in ("yara", "cape_yara"):
                 for sub_block in block.get(sub_keyword, []):
                     if re.findall(name, sub_block["name"], re.I):
-                        yield keyword, block["path"], sub_block
+                        yield sub_keyword, block["path"], sub_block
 
         for keyword in ("procdump", "procmemory", "extracted", "dropped"):
             if keyword in self.results and self.results[keyword] is not None:
@@ -823,8 +823,6 @@ class Signature(object):
             for sub_block in self.results["static"]["office"]["XLMMacroDeobfuscator"].get("info", []).get("yara_macro", []) or []:
                 if re.findall(name, sub_block["name"], re.I):
                     yield "macro", os.path.join(macro_path, "xlm_macro"), sub_block
-
-        yield False, False, False
 
     def add_statistic(self, name, field, value):
         if name not in self.results["statistics"]["signatures"]:
@@ -1117,6 +1115,19 @@ class Signature(object):
                       matched items or the first matched item
         """
         subject = self.results["behavior"]["summary"]["started_services"]
+        return self._check_value(pattern=pattern, subject=subject, regex=regex, all=all, ignorecase=True)
+
+    def check_created_service(self, pattern, regex=False, all=False):
+        """Checks for a service being created.
+        @param pattern: string or expression to check for.
+        @param regex: boolean representing if the pattern is a regular
+                      expression or not and therefore should be compiled.
+        @param all: boolean representing if all results should be returned
+                      in a set or not
+        @return: depending on the value of param 'all', either a set of
+                      matched items or the first matched item
+        """
+        subject = self.results["behavior"]["summary"]["created_services"]
         return self._check_value(pattern=pattern, subject=subject, regex=regex, all=all, ignorecase=True)
 
     def check_executed_command(self, pattern, regex=False, all=False, ignorecase=True):

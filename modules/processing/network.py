@@ -3,6 +3,7 @@
 # See the file 'docs/LICENSE' for copying permission.
 
 import os
+import sys
 import socket
 import struct
 import tempfile
@@ -20,6 +21,11 @@ try:
 except ImportError:
     import re
 
+# required to work webgui
+CUCKOO_ROOT = os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "..")
+sys.path.append(CUCKOO_ROOT)
+
+
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.dns import resolve
@@ -28,9 +34,9 @@ from lib.cuckoo.common.objects import File
 from lib.cuckoo.common.utils import convert_to_printable
 from lib.cuckoo.common.exceptions import CuckooProcessingError
 from dns.reversename import from_address
-from lib.cuckoo.common.constants import CUCKOO_ROOT
 from lib.cuckoo.common.ja3.ja3 import parse_variable_array, convert_to_ja3_segment, process_extensions
 from lib.cuckoo.common.safelist import is_safelisted_domain, is_safelisted_ip
+from data.safelist.domains import domain_passlist
 
 try:
     import geoip2.database
@@ -82,17 +88,31 @@ ip_passlist_file = proc_cfg.network.ipwhitelist_file
 # Be less verbose about httpreplay logging messages.
 logging.getLogger("httpreplay").setLevel(logging.CRITICAL)
 
+if enabled_passlist and passlist_file:
+    with open(os.path.join(CUCKOO_ROOT, passlist_file), "r") as f:
+        for domain in list(set(f.read().splitlines())):
+            if domain.startswith("#") or len(domain.strip()) == 0:
+                # comment or empty line
+                continue
+            domain_passlist.append(domain)
+
+
+ip_passlist = set()
+if enabled_ip_passlist and ip_passlist_file:
+    with open(os.path.join(CUCKOO_ROOT, ip_passlist_file), "r") as f:
+        ip_passlist = set(f.read().split("\n"))
 
 class Pcap:
     """Reads network data from PCAP file."""
     ssl_ports = 443,
 
-    def __init__(self, filepath, ja3_fprints):
+    def __init__(self, filepath, ja3_fprints, options):
         """Creates a new instance.
         @param filepath: path to PCAP file
         """
         self.filepath = filepath
         self.ja3_fprints = ja3_fprints
+        self.options = options
 
         # List of all hosts.
         self.hosts = []
@@ -103,6 +123,11 @@ class Pcap:
         # List containing all TCP packets.
         self.tcp_connections = []
         self.tcp_connections_seen = set()
+        # Lookup table to identify connection requests to services or IP
+        # addresses that are no longer available.
+        self.tcp_connections_dead = {}
+        self.dead_hosts = {}
+        self.alive_hosts = {}
         # List containing all UDP packets.
         self.udp_connections = []
         self.udp_connections_seen = set()
@@ -110,9 +135,15 @@ class Pcap:
         self.icmp_requests = []
         # List containing all HTTP requests.
         self.http_requests = OrderedDict()
+        # List containing all TLS/SSL3 key combinations.
+        self.tls_keys = []
         # List containing all DNS requests.
         self.dns_requests = OrderedDict()
         self.dns_answers = set()
+        # List of known good DNS servers
+        self.known_dns = self._build_known_dns()
+        # List of all used DNS servers
+        self.dns_servers = []
         # List containing all SMTP requests.
         self.smtp_requests = []
         # Reconstruncted SMTP flow.
@@ -124,56 +155,39 @@ class Pcap:
         # Dictionary containing all the results of this processing.
         self.results = {}
         # DNS ignore list
-        self.domain_passlist = [
-            # Certificate Trust Update domains
-            "^ocsp\.usertrust\.com$",
-            "\.windows\.com$",
-            "^ocsp\.comodoca\.com$",
-            "^ctldl\.windowsupdate\.com$",
-            "^crl\.microsoft\.com$",
-            "^urs\.microsoft\.com$",
-            "\.microsoft\.com$",
-            "\.skype\.com$",
-            "\.live\.com$",
-            "clients[0-9]+\.google\.com$",
-            "\.googleapis\.com$",
-            "\.gvt1\.com$",
-            "\.msftncsi\.com$",
-            "^apps\.identrust\.com$",
-            "^isrg\.trustid\.ocsp\.identrust\.com$",
-            "^urs\.microsoft\.com$",
-            "^config\.edge\.skype\.com$",
-            "^client-office365-tas\.msedge\.net$",
-            "^files\.acrobat\.com$",
-            "^acroipm2\.adobe\.com$",
-            "^acroipm\.adobe\.com$",
-            "^ocsp\.trust-provider\.com$",
-            "^ocsp\.comodoca4\.com$",
-            "^ocsp\.pki\.goog$",
-            "^oneclient.sfx.ms$",
-            "^ocsp\.verisign\.com$",
-            "^s2\.symcb\.com$",
-            "^sv\.symcd\.com$",
-            "^s\.symcd\.com$",
-            "^ts-ocsp\.ws\.symantec\.com$",
-            "^ocsp\.thawte\.com$",
-            "^crl\.thawte\.com$",
-            "^crt\.comodoca\.com$",
-            "^crt\.usertrust\.com$",
-            "^ocsp\.sectigo\.com$",
-            "^crl\.globalsign\.net$",
-            "^cacerts\.digicert\.com$"
-        ]
+        self.safelist_enabled = self.options.get("safelist_dns")
 
-        if enabled_passlist and passlist_file:
-            with open(os.path.join(CUCKOO_ROOT, passlist_file), "r") as f:
-                self.domain_passlist += self.domain_passlist + f.read().split("\n")
-                self.domain_passlist = list(set(self.domain_passlist))
+    def _is_safelisted(self, conn, hostname):
+        """Check if safelisting conditions are met"""
+        # Is safelistng enabled?
+        if not self.safelist_enabled:
+            return False
 
-        self.ip_passlist = set()
-        if enabled_ip_passlist and ip_passlist_file:
-            with open(os.path.join(CUCKOO_ROOT, ip_passlist_file), "r") as f:
-                self.ip_passlist = set(f.read().split("\n"))
+        # Is DNS recording coming from allowed NS server.
+        if not self.known_dns:
+            pass
+        elif (conn.get("src") in self.known_dns or conn.get("dst") in self.known_dns):
+            pass
+        else:
+            return False
+
+        # Is hostname safelisted.
+        if not is_safelisted_domain(hostname):
+            return False
+
+        return True
+
+    def _build_known_dns(self):
+        """Build known DNS list."""
+        result = []
+        _known_dns = self.options.get("allowed_dns")
+        _known_dns = None
+        if _known_dns is not None:
+            for r in _known_dns.split(","):
+                result.append(r.strip())
+            return result
+
+        return []
 
     def _dns_gethostbyname(self, name):
         """Get host by name wrapper.
@@ -244,7 +258,7 @@ class Pcap:
                 ip = convert_to_printable(connection["dst"])
 
                 if ip not in self.hosts:
-                    if ip in self.ip_passlist:
+                    if ip in ip_passlist:
                         return False
                     self.hosts.append(ip)
 
@@ -463,15 +477,13 @@ class Pcap:
                 query["answers"].append(ans)
 
             if enabled_passlist:
-                for reject in self.domain_passlist:
-                    if reject.startswith("#") or len(reject.strip()) == 0:
-                        continue  # comment or empty line
+                for reject in domain_passlist:
                     try:
                         if re.search(reject, query["request"]):
                             if query["answers"]:
                                 for addip in query["answers"]:
                                     if addip["type"] == "A" or addip["type"] == "AAAA":
-                                        self.ip_passlist.add(addip["data"])
+                                        ip_passlist.add(addip["data"])
                             return True
                     except re.RegexError as e:
                         log.error(("bad regex", reject, e))
@@ -547,10 +559,7 @@ class Pcap:
                 entry["host"] = conn["dst"]
 
             if enabled_passlist:
-                for reject in self.domain_passlist:
-                    # comment or empty line
-                    if reject.startswith("#") or len(reject.strip()) == 0:
-                        continue
+                for reject in domain_passlist:
                     if re.search(reject, entry["host"]):
                         return False
 
@@ -594,13 +603,11 @@ class Pcap:
 
         # Is this a valid TLS packet?
         if record.type not in dpkt.ssl.RECORD_TYPES:
-            log.info("record.type not in dpkt.ssl.RECORD_TYPES")
             return
 
         try:
             record = dpkt.ssl.RECORD_TYPES[record.type](record.data)
         except (dpkt.NeedData, dpkt.ssl.SSL3Exception):
-            log.info((dpkt.NeedData, dpkt.ssl.SSL3Exception))
             return
 
         # Is this a TLSv1 Handshake packet?
@@ -609,7 +616,6 @@ class Pcap:
 
         # We're only interested in the TLS Server Hello packets.
         if not isinstance(record.data, dpkt.ssl.TLSServerHello):
-            log.info("# We're only interested in the TLS Server Hello packets.")
             return
 
         # Extract the server random and the session id.
@@ -655,9 +661,9 @@ class Pcap:
         """
 
         if enabled_passlist:
-            if conn["src"] in self.ip_passlist:
+            if conn["src"] in ip_passlist:
                 return False
-            if conn["dst"] in self.ip_passlist:
+            if conn["dst"] in ip_passlist:
                 return False
 
         try:
@@ -681,6 +687,10 @@ class Pcap:
         Based on and importing from https://github.com/salesforce/ja3
         @param tcpdata: TCP data flow.
         """
+
+
+        if not tcpdata:
+            return
 
         tls_handshake = bytearray(tcpdata)
         if tls_handshake[0] != TLS_HANDSHAKE:
@@ -814,13 +824,25 @@ class Pcap:
 
                     connection["sport"] = tcp.sport
                     connection["dport"] = tcp.dport
-                    if len(tcp.data) > 0:
-                        self._tcp_dissect(connection, tcp.data)
 
-                    src, sport, dst, dport = (connection["src"], connection["sport"], connection["dst"], connection["dport"])
-                    if not ((dst, dport, src, sport) in self.tcp_connections_seen or (src, sport, dst, dport) in self.tcp_connections_seen):
-                        self.tcp_connections.append((src, sport, dst, dport, offset, ts - first_ts))
-                        self.tcp_connections_seen.add((src, sport, dst, dport))
+                    if tcp.data:
+                        self._tcp_dissect(connection, tcp.data)
+                        src, sport, dst, dport = (connection["src"], connection["sport"], connection["dst"], connection["dport"])
+                        if not ((dst, dport, src, sport) in self.tcp_connections_seen or (src, sport, dst, dport) in self.tcp_connections_seen):
+                            self.tcp_connections.append((src, sport, dst, dport, offset, ts - first_ts))
+                            self.tcp_connections_seen.add((src, sport, dst, dport))
+                        self.alive_hosts[dst, dport] = True
+                    else:
+                        ipconn = (
+                            connection["src"], tcp.sport,
+                            connection["dst"], tcp.dport,
+                        )
+                        seqack = self.tcp_connections_dead.get(ipconn)
+                        if seqack == (tcp.seq, tcp.ack):
+                            host = connection["dst"], tcp.dport
+                            self.dead_hosts[host] = self.dead_hosts.get(host, 1) + 1
+
+                        self.tcp_connections_dead[ipconn] = tcp.seq, tcp.ack
 
                 elif ip.p == dpkt.ip.IP_PROTO_UDP:
                     udp = ip.data
@@ -871,18 +893,44 @@ class Pcap:
         self.results["irc"] = self.irc_requests
         self.results["ja3"] = self.ja3_records
 
+        self.results["dead_hosts"] = []
+
+        # Report each IP/port combination as a dead host if we've had to retry
+        # at least 3 times to connect to it and if no successful connections
+        # were detected throughout the analysis.
+        for (ip, port), count in self.dead_hosts.items():
+            if count < 3 or (ip, port) in self.alive_hosts:
+                continue
+
+            # Report once.
+            if (ip, port) not in self.results["dead_hosts"]:
+                self.results["dead_hosts"].append((ip, port))
+
         if enabled_passlist:
 
             for host in self.results["hosts"]:
-                for delip in self.ip_passlist:
+                for delip in ip_passlist:
                     if delip == host["ip"]:
                         self.results["hosts"].remove(host)
 
             for keyword in ("tcp", "udp", "icmp"):
                 for host in self.results[keyword]:
-                    for delip in self.ip_passlist:
+                    for delip in ip_passlist:
                         if delip == host["src"] or delip == host["dst"]:
                             self.results[keyword].remove(host)
+
+        domainlookups = dict()
+        iplookups = dict()
+        # Creating dns information dicts by domain and ip.
+        if self.unique_domains:
+            domainlookups = dict((i["domain"], i["ip"]) for i in self.unique_domains)
+            iplookups = dict((i["ip"], i["domain"]) for i in self.unique_domains)
+            for i in self.results["dns"]:
+                for a in i["answers"]:
+                    iplookups[a["data"]] = i["request"]
+
+        self.results["domainlookups"] = domainlookups
+        self.results["iplookups"] = iplookups
 
         return self.results
 
@@ -915,7 +963,7 @@ class Pcap2(object):
         }
 
         if not os.path.exists(self.network_path):
-            os.mkdir(self.network_path)
+            os.makedirs(self.network_path, exist_ok=True)
 
         if not os.path.exists(self.pcap_path):
             log.warning("The PCAP file does not exist at path \"%s\".", self.pcap_path)
@@ -928,8 +976,26 @@ class Pcap2(object):
         for s, ts, protocol, sent, recv in l:
             srcip, srcport, dstip, dstport = s
 
-            if is_safelisted_ip(dstip):
-                continue
+            if enabled_passlist:
+                """
+                if is_safelisted_ip(dstip):
+                    continue
+                """
+                #ToDo rewrite the whole safelists
+                #ip or host
+
+                if dstip in ip_passlist:
+                    continue
+
+                hostname = False
+                if protocol == "smtp":
+                    hostname = sent.hostname
+                elif protocol in ("http", "https"):
+                    hostname = sent.headers.get("host")
+
+                for reject in domain_passlist:
+                    if hostname and re.search(reject, hostname):
+                        return False
 
             if protocol == "smtp":
                 results["smtp_ex"].append({
@@ -961,54 +1027,70 @@ class Pcap2(object):
                 if isinstance(recv.raw, bytes):
                     response = recv.raw.split(b"\r\n\r\n", 1)[0]
 
-                # TODO Don't create empty files (e.g., the sent body for a GET request or a 301/302 HTTP redirect).
-                req_md5 = md5(sent.body or b"").hexdigest()
-                req_sha1 = sha1(sent.body or b"").hexdigest()
-                req_sha256 = sha256(sent.body or b"").hexdigest()
-                req_path = os.path.join(self.network_path, req_sha1)
-                if sent.body:
-                    open(req_path, "wb").write(sent.body or b"")
-
-                resp_md5 = md5(recv.body or b"").hexdigest()
-                resp_sha1 = sha1(recv.body or b"").hexdigest()
-                resp_sha256 = sha256(recv.body or b"").hexdigest()
-                resp_path = os.path.join(self.network_path, resp_sha256)
-                if recv.body:
-                    open(resp_path, "wb").write(recv.body or b"")
-
-                results["%s_ex" % protocol].append({
+                status = int(getattr(recv, "status", 0))
+                tmp_dict = {
                     "src": srcip, "sport": srcport,
                     "dst": dstip, "dport": dstport,
                     "protocol": protocol,
                     "method": sent.method,
                     "host": sent.headers.get("host", dstip),
                     "uri": sent.uri,
-                    "status": int(getattr(recv, "status", 0)),
+                    "status": status,
 
                     # We'll keep these fields here for now.
                     "request": request,#.decode("latin-1"),
                     "response": response,#.decode("latin-1"),
+                }
 
-                    # It's not perfect yet, but it'll have to do.
-                    "req": {
-                        "path": req_path,
-                        "md5": req_md5,
-                        "sha1": req_sha1,
-                        "sha256": req_sha256,
-                    },
-                    "resp": {
-                        "path": resp_path,
-                        "md5": resp_md5,
-                        "sha1": resp_sha1,
-                        "sha256": resp_sha256,
-                    },
+                if status and status not in (301, 302):
+                    if sent.body:
+                        req_md5 = md5(sent.body).hexdigest()
+                        req_sha1 = sha1(sent.body).hexdigest()
+                        req_sha256 = sha256(sent.body).hexdigest()
 
-                    # Obsolete fields.
-                    "md5": resp_md5,
-                    "sha1": resp_sha1,
-                    "sha256": resp_sha256,
-                    "path": resp_path,
-                })
+                        req_path = os.path.join(self.network_path, req_sha1)
+                        with open(req_path, "wb") as f:
+                            f.write(sent.body)
+
+                        # It's not perfect yet, but it'll have to do.
+                        tmp_dict["req"] = {
+                            "path": req_path,
+                            "md5": req_md5,
+                            "sha1": req_sha1,
+                            "sha256": req_sha256,
+                        }
+
+                    if recv.body:
+                        resp_md5 = md5(recv.body).hexdigest()
+                        resp_sha1 = sha1(recv.body).hexdigest()
+                        resp_sha256 = sha256(recv.body).hexdigest()
+                        resp_path = os.path.join(self.network_path, resp_sha256)
+                        with open(resp_path, "wb") as f:
+                            f.write(recv.body)
+                        resp_preview = list()
+                        try:
+                            c = 0
+                            for i in range(3):
+                                data = recv.body[c:c+16]
+                                if not data:
+                                    continue
+                                s1 = " ".join([f"{i:02x}" for i in data]) # hex string
+                                s1 = s1[0:23] + " " + s1[23:]          # insert extra space between groups of 8 hex values
+                                s2 = "".join([chr(i) if 32 <= i <= 127 else "." for i in data]) # ascii string; chained comparison
+                                resp_preview.append(f"{i*16:08x}  {s1:<48}  |{s2}|")
+                                c += 16
+                        except Exception as e:
+                            log.info(e)
+
+                        tmp_dict["resp"] = {
+                            "md5": resp_md5,
+                            "sha1": resp_sha1,
+                            "sha256": resp_sha256,
+                            "preview": resp_preview,
+                            "path": resp_path,
+                        }
+
+                results["%s_ex" % protocol].append(tmp_dict)
 
         return results
 
@@ -1071,7 +1153,7 @@ class NetworkAnalysis(Processing):
             pcap_path = self.pcap_path
         """
         pcap_path = self.pcap_path
-        results.update(Pcap(pcap_path, ja3_fprints).run())
+        results.update(Pcap(pcap_path, ja3_fprints, self.options).run())
         # buf = Pcap(self.pcap_path, ja3_fprints).run()
         # results = Pcap(sorted_path, ja3_fprints).run()
         # results["http"] = buf["http"]
