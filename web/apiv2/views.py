@@ -55,7 +55,7 @@ try:
     HAVE_PYZIPPER = True
 except ImportError:
     HAVE_PYZIPPER = False
-    print("Missed pyzipper dependency: pip3 install pyzipper -U")
+    print("Missing pyzipper dependency: pip3 install pyzipper -U")
 
 log = logging.getLogger(__name__)
 
@@ -1968,14 +1968,14 @@ def post_processing(request, category, task_id):
     if content and category:
         content = json.loads(content)
         if not content:
-            return Response({"error": True, "msg": "Missed content data or category"})
+            return Response({"error": True, "msg": "Missing content data or category"})
         buf = results_db.analysis.find_one({"info.id": int(task_id)}, {"_id": 1})
         if not buf:
             return Response({"error": True, "msg": "Task id doesn't exist"})
         results_db.analysis.update({"_id": ObjectId(buf["_id"])}, {"$set": {category: content}})
         resp = {"error": False, "msg": "Added under the key {}".format(category)}
     else:
-        resp = {"error": True, "msg": "Missed content data or category"}
+        resp = {"error": True, "msg": "Missing content data or category"}
 
     return Response(resp)
 """
