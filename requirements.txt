@@ -53,6 +53,7 @@ pype32-py3>=0.1
 python-dateutil>=2.8.1
 python-magic>=0.4.12
 python-pcre>=0.7
+python-tlsh>=3.17.0
 python-whois>=0.7.3
 pyvim>=3.0.2
 pyzipper>=0.3.3
