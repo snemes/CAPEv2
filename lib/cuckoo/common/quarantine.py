@@ -17,7 +17,7 @@ try:
     HAVE_OLEFILE = True
 except ImportError:
     HAVE_OLEFILE = False
-    print("Missed olefile dependency: pip3 install olefile")
+    print("Missing olefile dependency: pip3 install olefile")
 
 from lib.cuckoo.common.utils import store_temp_file
 
@@ -681,7 +681,7 @@ def trend_unquarantine(f):
 
 def mcafee_unquarantine(f):
     if not HAVE_OLEFILE:
-        log.info("Missed olefile dependency: pip3 install olefile")
+        log.info("Missing olefile dependency: pip3 install olefile")
         return None
 
     if not olefile.isOleFile(f):
@@ -755,7 +755,7 @@ def unquarantine(f):
     realbase, ext = os.path.splitext(base)
 
     if not HAVE_OLEFILE:
-        log.info("Missed olefile dependency: pip3 install olefile")
+        log.info("Missing olefile dependency: pip3 install olefile")
     if ext.lower() == ".bup" or (HAVE_OLEFILE and olefile.isOleFile(f)):
         try:
             return mcafee_unquarantine(f)

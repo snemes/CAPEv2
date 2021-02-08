@@ -62,7 +62,7 @@ try:
     import tlsh
     HAVE_TLSH = True
 except ImportError:
-    print("Missed dependency: pip3 install python-tlsh")
+    print("Missing dependency: pip3 install python-tlsh")
     HAVE_TLSH = False
 
 log = logging.getLogger(__name__)
