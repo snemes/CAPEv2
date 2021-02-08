@@ -5,14 +5,19 @@
 from __future__ import absolute_import
 from __future__ import print_function
 import os
-import shutil
 import sys
+import shutil
 import copy
 import socket
 import logging
 import logging.handlers
 
-import yara
+try:
+    import yara
+    if not int(yara.__version__[0]) >= 4:
+        raise ImportError("Missed library: pip3 install yara-python>=4.0.0 -U")
+except ImportError:
+    print("Missed library: pip3 install yara-python>=4.0.0 -U")
 import modules.auxiliary
 import modules.processing
 import modules.signatures
@@ -268,10 +273,24 @@ def init_yara():
         externals = {"filename": ""}
 
         if category != "monitor":
-            try:
-                File.yara_rules[category] = yara.compile(filepaths=rules, externals=externals)
-            except yara.Error as e:
-                raise CuckooStartupError("There was a syntax error in one or more Yara rules: %s" % e)
+            while True:
+                try:
+                    File.yara_rules[category] = yara.compile(filepaths=rules, externals=externals)
+                    break
+                except yara.SyntaxError as e:
+                    bad_rule = str(e).split(".yar")[0]+".yar"
+                    if bad_rule in indexed:
+                        for k,v in rules.items():
+                            if v == bad_rule:
+                                del rules[k]
+                                indexed.remove(os.path.basename(bad_rule))
+                                print("Deleted broken yara rule: {}".format(bad_rule))
+                    else:
+                        break
+                except yara.Error as e:
+                    print(e, sys.exc_info())
+                    log.error("There was a syntax error in one or more Yara rules: %s" % e)
+                    break
 
             # ToDo for Volatility3 yarascan
             # The memory.py processing module requires a yara file with all of its
@@ -288,6 +307,8 @@ def init_yara():
                 else:
                     log.debug("\t |-- %s %s", category, entry)
         else:
+            continue
+            """
             try:
                 compiled = yara.compile(filepaths=rules, externals=externals)
                 compiled_path = os.path.join(CUCKOO_ROOT, "analyzer", "windows", "data", "yarac")
@@ -295,8 +316,9 @@ def init_yara():
                     os.makedirs(compiled_path, exist_ok=True)
                 compiled.save(os.path.join(compiled_path, "monitor.yac"))
             except yara.Error as e:
+                print(e, sys.exc_info())
                 raise CuckooStartupError("There was a syntax error in one or more Yara rules: %s" % e)
-
+            """
 
 def init_rooter():
     """If required, check whether the rooter is running and whether we can
