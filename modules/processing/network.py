@@ -51,7 +51,7 @@ try:
     IS_DPKT = True
 except ImportError:
     IS_DPKT = False
-    print("Missed dependency: pip3 install -U dpkt")
+    print("Missing dependency: pip3 install -U dpkt")
 
 HAVE_HTTPREPLAY = False
 try:
@@ -60,7 +60,7 @@ try:
     if httpreplay.__version__ == '0.3':
         HAVE_HTTPREPLAY = True
 except ImportError:
-    print("Missed dependency: pip3 install -U git+https://github.com/CAPESandbox/httpreplay")
+    print("Missing dependency: pip3 install -U git+https://github.com/CAPESandbox/httpreplay")
 
 
 # Imports for the batch sort.

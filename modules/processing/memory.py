@@ -34,7 +34,7 @@ try:
     # from volatility3.plugins.windows import pslist
     HAVE_VOLATILITY = True
 except Exception as e:
-    print("Missed dependency: pip3 install volatility3 -U")
+    print("Missing dependency: pip3 install volatility3 -U")
     HAVE_VOLATILITY = False
 
 log = logging.getLogger(__name__)

@@ -60,7 +60,7 @@ try:
     import pyzipper
     HAVE_PYZIPPER = True
 except ImportError:
-    print("Missed dependency: pip3 install pyzipper -U")
+    print("Missing dependency: pip3 install pyzipper -U")
     HAVE_PYZIPPER = False
 
 TASK_LIMIT = 25
@@ -1142,7 +1142,7 @@ def file(request, category, task_id, dlfile):
                     with open(path, "rb") as f:
                         zf.writestr(os.path.basename(path), f.read())
             else:
-                return render(request, "error.html", {"error": "Missed pyzipper library"})
+                return render(request, "error.html", {"error": "Missing pyzipper library"})
             file_name += ".zip"
             path = os.path.join(tempfile.gettempdir(), file_name)
             cd = "application/zip"
