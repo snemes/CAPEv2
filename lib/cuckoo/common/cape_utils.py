@@ -31,7 +31,7 @@ try:
     import pefile
     HAVE_PEFILE = True
 except ImportError:
-    print("Missed pefile library. Install it with: pip3 install pefile")
+    print("Missing pefile library. Install it with: pip3 install pefile")
     HAVE_PEFILE = False
 
 # Import All config parsers
@@ -44,7 +44,7 @@ try:
     HAS_MWCP = True
 except ImportError as e:
     HAS_MWCP = False
-    log.info("Missed MWCP -> pip3 install git+https://github.com/Defense-Cyber-Crime-Center/DC3-MWCP\nDetails: {}".format(e))
+    log.info("Missing MWCP -> pip3 install git+https://github.com/Defense-Cyber-Crime-Center/DC3-MWCP\nDetails: {}".format(e))
 
 try:
     from malwareconfig import fileparser
@@ -53,7 +53,7 @@ try:
     HAS_MALWARECONFIGS = True
 except ImportError:
     HAS_MALWARECONFIGS = False
-    log.info("Missed RATDecoders -> pip3 install git+https://github.com/kevthehermit/RATDecoders")
+    log.info("Missing RATDecoders -> pip3 install git+https://github.com/kevthehermit/RATDecoders")
 except Exception as e:
     log.error(e, exc_info=True)
 """
@@ -65,7 +65,7 @@ try:
     HAVE_MALDUCK = True
 except ImportError:
     HAVE_MALDUCK = False
-    log.info("Missed MalDuck -> pip3 install git+https://github.com/CERT-Polska/malduck/")
+    log.info("Missing MalDuck -> pip3 install git+https://github.com/CERT-Polska/malduck/")
 """
 
 cape_decoders = os.path.join(CUCKOO_ROOT, "modules", "processing", "parsers", "CAPE")
